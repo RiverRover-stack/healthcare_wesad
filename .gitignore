@@ -1,10 +1,48 @@
+# ── Raw dataset (too large to track, ~15 GB) ─────────────────────────────────
 WESAD/
 *.pkl
+
+# ── Trained model checkpoints ─────────────────────────────────────────────────
+# These grow large (~100 MB+ after full training) and are reproducible by
+# re-running train_teacher.py / train_students.py.
+outputs/models/
+*.pt
+*.pth
+
+# ── Generated figures and LaTeX tables ────────────────────────────────────────
+# Regenerate with: python generate_report.py
+outputs/reports/*.png
+outputs/reports/*.tex
+
+# NOTE: outputs/reports/*.csv IS tracked (model_comparison.csv, ablation_results.csv)
+# — these are small text files that record experiment results.
+
+# ── Extracted features cache ──────────────────────────────────────────────────
+outputs/features/
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Archives and compiled files ───────────────────────────────────────────────
 *.zip
 *.pdf
-.claude/
-__pycache__/
-*.pyc
+*.tar.gz
+
+# ── Environment and secrets ───────────────────────────────────────────────────
 .env
 venv/
 .venv/
+*.egg-info/
+
+# ── IDE / OS files ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Claude Code local config ──────────────────────────────────────────────────
+.claude/

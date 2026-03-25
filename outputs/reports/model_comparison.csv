@@ -1,0 +1,7 @@
+Model,Params,Accuracy,Recall,F1,ROC-AUC
+Random Baseline,--,~0.50,0.358,0.364,--
+Majority Baseline,--,~0.67,0.000,0.000,--
+EDA Threshold,--,~0.60,0.866,0.792,--
+Logistic Regression,~150 feat.,0.964 +/- 0.072,0.954 +/- 0.134,0.947 +/- 0.105,0.976 +/- 0.062
+Random Forest,~150 feat.,0.966 +/- 0.077,0.965 +/- 0.081,0.956 +/- 0.086,0.996 +/- 0.011
+1D-CNN Teacher,~45K,0.988 +/- 0.024,0.986 +/- 0.041,0.983 +/- 0.035,0.995 +/- 0.016

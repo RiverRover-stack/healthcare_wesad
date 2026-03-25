@@ -103,6 +103,35 @@ SATURATION_PERCENTILE = 99.9
 # =============================================================================
 
 
+# =============================================================================
+# DEEP LEARNING CONFIGURATION
+# =============================================================================
+# Single source of truth for all DL hyperparameters.
+# trainer.py, distillation.py, and dl_dataset.py all import from here.
+
+DL_CONFIG = {
+    # Signal resampling
+    'target_sr':        64,      # Hz — 700 -> 64 Hz downsample before CNN input
+
+    # Shared training
+    'batch_size':       16,      # Small batches: total dataset is ~380 windows
+    'lr':               3e-4,    # AdamW learning rate
+    'weight_decay':     1e-3,    # L2 regularisation — prevents overfitting on tiny data
+
+    # Epoch counts (teacher needs more, students converge faster)
+    'teacher_epochs':   40,
+    'student_epochs':   30,
+
+    # Knowledge Distillation
+    'kd_temperature':   4.0,     # Softens teacher distribution (higher = softer)
+    'kd_alpha':         0.7,     # Weight on soft (teacher) targets; 1-alpha on hard labels
+
+    # Ablation sweep ranges (used by run_ablation.py)
+    'ablation_temperatures': [1, 2, 4, 8],
+    'ablation_alphas':       [0.3, 0.5, 0.7, 0.9],
+}
+
+
 def create_directories():
     """Create all required output directories."""
     for d in [OUTPUT_DIR, FEATURES_DIR, MODELS_DIR, REPORTS_DIR]:

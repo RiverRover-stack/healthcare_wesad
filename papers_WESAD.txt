@@ -1,0 +1,964 @@
+@inproceedings{bobade2020stress,
+  title={Stress detection with machine learning and deep learning using multimodal physiological data},
+  author={Bobade, Pramod and Vani, M},
+  booktitle={2020 second international conference on inventive research in computing applications (ICIRCA)},
+  pages={51--57},
+  year={2020},
+  organization={IEEE}
+}
+
+@inproceedings{garg2021stress,
+  title={Stress detection by machine learning and wearable sensors},
+  author={Garg, Prerna and Santhosh, Jayasankar and Dengel, Andreas and Ishimaru, Shoya},
+  booktitle={Companion proceedings of the 26th international conference on intelligent user interfaces},
+  pages={43--45},
+  year={2021}
+}
+
+@article{rashid2023stress,
+  title={Stress detection using context-aware sensor fusion from wearable devices},
+  author={Rashid, Nafiul and Mortlock, Trier and Al Faruque, Mohammad Abdullah},
+  journal={IEEE Internet of Things Journal},
+  volume={10},
+  number={16},
+  pages={14114--14127},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{zhu2023stress,
+  title={Stress detection through wrist-based electrodermal activity monitoring and machine learning},
+  author={Zhu, Lili and Spachos, Petros and Ng, Pai Chet and Yu, Yuanhao and Wang, Yang and Plataniotis, Konstantinos and Hatzinakos, Dimitrios},
+  journal={IEEE Journal of Biomedical and Health Informatics},
+  volume={27},
+  number={5},
+  pages={2155--2165},
+  year={2023},
+  publisher={IEEE}
+}
+
+@inproceedings{behinaein2021transformer,
+  title={A transformer architecture for stress detection from ecg},
+  author={Behinaein, Behnam and Bhatti, Anubhav and Rodenburg, Dirk and Hungler, Paul and Etemad, Ali},
+  booktitle={Proceedings of the 2021 ACM international symposium on wearable computers},
+  pages={132--134},
+  year={2021}
+}
+
+@article{gil2022human,
+  title={Human stress detection with wearable sensors using convolutional neural networks},
+  author={Gil-Martin, Manuel and San-Segundo, Ruben and Mateos, Ana and Ferreiros-Lopez, Javier},
+  journal={IEEE Aerospace and Electronic Systems Magazine},
+  volume={37},
+  number={1},
+  pages={60--70},
+  year={2022},
+  publisher={IEEE}
+}
+
+@inproceedings{indikawati2020stress,
+  title={Stress detection from multimodal wearable sensor data},
+  author={Indikawati, Fitri Indra and Winiarti, Sri},
+  booktitle={IOP conference series: Materials science and engineering},
+  volume={771},
+  number={1},
+  pages={012028},
+  year={2020},
+  organization={IOP Publishing}
+}
+
+@article{albaladejo2023evaluating,
+  title={Evaluating different configurations of machine learning models and their transfer learning capabilities for stress detection using heart rate},
+  author={Albaladejo-Gonz{\'a}lez, Mariano and Ruip{\'e}rez-Valiente, Jos{\'e} A and G{\'o}mez M{\'a}rmol, F{\'e}lix},
+  journal={Journal of Ambient Intelligence and Humanized Computing},
+  volume={14},
+  number={8},
+  pages={11011--11021},
+  year={2023},
+  publisher={Springer}
+}
+
+@article{mohammadi2022integrated,
+  title={An integrated human stress detection sensor using supervised algorithms},
+  author={Mohammadi, Amirmohammad and Fakharzadeh, Mohammad and Baraeinejad, Bardia},
+  journal={IEEE Sensors Journal},
+  volume={22},
+  number={8},
+  pages={8216--8223},
+  year={2022},
+  publisher={IEEE}
+}
+
+@inproceedings{zhu2022multimodal,
+  title={Multimodal physiological signals and machine learning for stress detection by wearable devices},
+  author={Zhu, Lili and Spachos, Petros and Gregori, Stefano},
+  booktitle={2022 IEEE International Symposium on Medical Measurements and Applications (MeMeA)},
+  pages={1--6},
+  year={2022},
+  organization={IEEE}
+}
+
+@article{almadhor2023wrist,
+  title={Wrist-based electrodermal activity monitoring for stress detection using federated learning},
+  author={Almadhor, Ahmad and Sampedro, Gabriel Avelino and Abisado, Mideth and Abbas, Sidra and Kim, Ye-Jin and Khan, Muhammad Attique and Baili, Jamel and Cha, Jae-Hyuk},
+  journal={Sensors},
+  volume={23},
+  number={8},
+  pages={3984},
+  year={2023},
+  publisher={MDPI}
+}
+
+@article{nigam2021improved,
+  title={An improved approach for stress detection using physiological signals.},
+  author={Nigam, Kushagra and Godani, Kirti and Sharma, Deepshi and Jain, Shikha},
+  journal={EAI Endorsed Transactions on Scalable Information Systems},
+  volume={8},
+  number={33},
+  year={2021}
+}
+
+@inproceedings{benita2024stress,
+  title={Stress detection using cnn on the wesad dataset},
+  author={Benita, D Shirley and Ebenezer, A Shamila and Susmitha, L and Subathra, MSP and Priya, S Jeba},
+  booktitle={2024 International Conference on Emerging Systems and Intelligent Computing (ESIC)},
+  pages={308--313},
+  year={2024},
+  organization={IEEE}
+}
+
+@article{mukherjee2022real,
+  title={Real-time mental stress detection technique using neural networks towards a wearable health monitor},
+  author={Mukherjee, Nilava and Mukhopadhyay, Sumitra and Gupta, Rajarshi},
+  journal={Measurement Science and Technology},
+  volume={33},
+  number={4},
+  pages={044003},
+  year={2022},
+  publisher={IOP Publishing}
+}
+
+@article{abdelfattah2025machine,
+  title={Machine and deep learning models for stress detection using multimodal physiological data},
+  author={Abdelfattah, Eman and Joshi, Shreehar and Tiwari, Shreekar},
+  journal={IEEE Access},
+  volume={13},
+  pages={4597--4608},
+  year={2025},
+  publisher={IEEE}
+}
+
+@inproceedings{huynh2021stressnas,
+  title={Stressnas: Affect state and stress detection using neural architecture search},
+  author={Huynh, Lam and Nguyen, Tri and Nguyen, Thu and Pirttikangas, Susanna and Siirtola, Pekka},
+  booktitle={Adjunct Proceedings of the 2021 ACM International Joint Conference on Pervasive and Ubiquitous Computing and Proceedings of the 2021 ACM International Symposium on Wearable Computers},
+  pages={121--125},
+  year={2021}
+}
+
+@article{rabbani2022contrastive,
+  title={Contrastive self-supervised learning for stress detection from ECG data},
+  author={Rabbani, Suha and Khan, Naimul},
+  journal={Bioengineering},
+  volume={9},
+  number={8},
+  pages={374},
+  year={2022},
+  publisher={MDPI}
+}
+
+@inproceedings{zontone2019stress,
+  title={Stress detection through electrodermal activity (EDA) and electrocardiogram (ECG) analysis in car drivers},
+  author={Zontone, Pamela and Affanni, Antonio and Bernardini, Riccardo and Piras, Alessandro and Rinaldo, Roberto},
+  booktitle={2019 27th European Signal Processing Conference (EUSIPCO)},
+  pages={1--5},
+  year={2019},
+  organization={IEEE}
+}
+
+@inproceedings{albertetti2020stress,
+  title={Stress detection with deep learning approaches using physiological signals},
+  author={Albertetti, Fabrizio and Simalastar, Alena and Rizzotti-Kaddouri, A{\"\i}cha},
+  booktitle={International Conference on IoT Technologies for HealthCare},
+  pages={95--111},
+  year={2020},
+  organization={Springer}
+}
+
+@article{campanella2023method,
+  title={A method for stress detection using empatica E4 bracelet and machine-learning techniques},
+  author={Campanella, Sara and Altaleb, Ayham and Belli, Alberto and Pierleoni, Paola and Palma, Lorenzo},
+  journal={Sensors},
+  volume={23},
+  number={7},
+  pages={3565},
+  year={2023},
+  publisher={MDPI}
+}
+
+@article{nath2020machine,
+  title={Machine learning based solutions for real-time stress monitoring},
+  author={Nath, Rajdeep Kumar and Thapliyal, Himanshu and Caban-Holt, Allison and Mohanty, Saraju P},
+  journal={IEEE Consumer Electronics Magazine},
+  volume={9},
+  number={5},
+  pages={34--41},
+  year={2020},
+  publisher={IEEE}
+}
+
+@article{masood2019modeling,
+  title={Modeling mental stress using a deep learning framework},
+  author={Masood, Khalid and Alghamdi, Mohammed A},
+  journal={IEEE access},
+  volume={7},
+  pages={68446--68454},
+  year={2019},
+  publisher={IEEE}
+}
+
+@article{gedam2021review,
+  title={A review on mental stress detection using wearable sensors and machine learning techniques},
+  author={Gedam, Shruti and Paul, Sanchita},
+  journal={IEEE Access},
+  volume={9},
+  pages={84045--84066},
+  year={2021},
+  publisher={IEEE}
+}
+
+@article{nath2022machine,
+  title={Machine learning based stress monitoring in older adults using wearable sensors and cortisol as stress biomarker},
+  author={Nath, Rajdeep Kumar and Thapliyal, Himanshu and Caban-Holt, Allison},
+  journal={Journal of Signal Processing Systems},
+  volume={94},
+  number={6},
+  pages={513--525},
+  year={2022},
+  publisher={Springer}
+}
+
+@article{kang2021classification,
+  title={Classification of mental stress using CNN-LSTM algorithms with electrocardiogram signals},
+  author={Kang, Mingu and Shin, Siho and Jung, Jaehyo and Kim, Youn Tae},
+  journal={Journal of Healthcare Engineering},
+  volume={2021},
+  number={1},
+  pages={9951905},
+  year={2021},
+  publisher={Wiley Online Library}
+}
+
+@article{oh2020design,
+  title={The design of CNN architectures for optimal six basic emotion classification using multiple physiological signals},
+  author={Oh, SeungJun and Lee, Jun-Young and Kim, Dong Keun},
+  journal={Sensors},
+  volume={20},
+  number={3},
+  pages={866},
+  year={2020},
+  publisher={MDPI}
+}
+
+@article{dar2020cnn,
+  title={CNN and LSTM-based emotion charting using physiological signals},
+  author={Dar, Muhammad Najam and Akram, Muhammad Usman and Khawaja, Sajid Gul and Pujari, Amit N},
+  journal={Sensors},
+  volume={20},
+  number={16},
+  pages={4551},
+  year={2020},
+  publisher={MDPI}
+}
+
+@article{li2020stress,
+  title={Stress detection using deep neural networks},
+  author={Li, Russell and Liu, Zhandong},
+  journal={BMC Medical Informatics and Decision Making},
+  volume={20},
+  number={Suppl 11},
+  pages={285},
+  year={2020},
+  publisher={Springer}
+}
+
+@article{he2019real,
+  title={Real-time detection of acute cognitive stress using a convolutional neural network from electrocardiographic signal},
+  author={He, Jiayuan and Li, Ke and Liao, Xiaoli and Zhang, Ping and Jiang, Ning},
+  journal={IEEE Access},
+  volume={7},
+  pages={42710--42717},
+  year={2019},
+  publisher={IEEE}
+}
+
+@article{rim2020deep,
+  title={Deep learning in physiological signal data: A survey},
+  author={Rim, Beanbonyka and Sung, Nak-Jun and Min, Sedong and Hong, Min},
+  journal={Sensors},
+  volume={20},
+  number={4},
+  pages={969},
+  year={2020},
+  publisher={MDPI}
+}
+
+@article{rastgoo2019automatic,
+  title={Automatic driver stress level classification using multimodal deep learning},
+  author={Rastgoo, Mohammad Naim and Nakisa, Bahareh and Maire, Frederic and Rakotonirainy, Andry and Chandran, Vinod},
+  journal={Expert Systems with Applications},
+  volume={138},
+  pages={112793},
+  year={2019},
+  publisher={Elsevier}
+}
+
+@article{seo2022deep,
+  title={Deep learning approach for detecting work-related stress using multimodal signals},
+  author={Seo, Wonju and Kim, Namho and Park, Cheolsoo and Park, Sung-Min},
+  journal={IEEE Sensors Journal},
+  volume={22},
+  number={12},
+  pages={11892--11902},
+  year={2022},
+  publisher={IEEE}
+}
+
+@article{santamaria2018using,
+  title={Using deep convolutional neural network for emotion detection on a physiological signals dataset (AMIGOS)},
+  author={Santamaria-Granados, Luz and Munoz-Organero, Mario and Ramirez-Gonzalez, Gustavo and Abdulhay, Enas and Arunkumar, NJIA},
+  journal={IEEE Access},
+  volume={7},
+  pages={57--67},
+  year={2018},
+  publisher={IEEE}
+}
+
+@inproceedings{liu2023emotionkd,
+  title={Emotionkd: a cross-modal knowledge distillation framework for emotion recognition based on physiological signals},
+  author={Liu, Yucheng and Jia, Ziyu and Wang, Haichao},
+  booktitle={Proceedings of the 31st ACM International Conference on Multimedia},
+  pages={6122--6131},
+  year={2023}
+}
+
+@article{hooshmand2017boosting,
+  title={Boosting the battery life of wearables for health monitoring through the compression of biosignals},
+  author={Hooshmand, Mohsen and Zordan, Davide and Del Testa, Davide and Grisan, Enrico and Rossi, Michele},
+  journal={IEEE Internet of Things Journal},
+  volume={4},
+  number={5},
+  pages={1647--1662},
+  year={2017},
+  publisher={IEEE}
+}
+
+@article{pagan2018toward,
+  title={Toward ultra-low-power remote health monitoring: An optimal and adaptive compressed sensing framework for activity recognition},
+  author={Pagan, Josue and Fallahzadeh, Ramin and Pedram, Mahdi and Risco-Martin, Jose L and Moya, Jose M and Ayala, Jose L and Ghasemzadeh, Hassan},
+  journal={IEEE Transactions on Mobile Computing},
+  volume={18},
+  number={3},
+  pages={658--673},
+  year={2018},
+  publisher={IEEE}
+}
+
+@article{zonzini2021model,
+  title={Model-assisted compressed sensing for vibration-based structural health monitoring},
+  author={Zonzini, Federica and Zauli, Matteo and Mangia, Mauro and Testoni, Nicola and De Marchi, Luca},
+  journal={IEEE Transactions on Industrial Informatics},
+  volume={17},
+  number={11},
+  pages={7338--7347},
+  year={2021},
+  publisher={IEEE}
+}
+
+@inproceedings{ukil2015iot,
+  title={IoT data compression: Sensor-agnostic approach},
+  author={Ukil, Arijit and Bandyopadhyay, Soma and Pal, Arpan},
+  booktitle={2015 data compression conference},
+  pages={303--312},
+  year={2015},
+  organization={IEEE}
+}
+
+@article{elgendi2018improving,
+  title={Improving remote health monitoring: A low-complexity ECG compression approach},
+  author={Elgendi, Mohamed and Al-Ali, Abdulla and Mohamed, Amr and Ward, Rabab},
+  journal={Diagnostics},
+  volume={8},
+  number={1},
+  pages={10},
+  year={2018},
+  publisher={MDPI}
+}
+
+@article{wang2025deploying,
+  title={Deploying AI on edge: Advancement and challenges in edge intelligence},
+  author={Wang, Tianyu and Guo, Jinyang and Zhang, Bowen and Yang, Ge and Li, Dong},
+  journal={Mathematics},
+  volume={13},
+  number={11},
+  pages={1878},
+  year={2025},
+  publisher={MDPI}
+}
+
+@article{cao2024online,
+  title={Online knowledge distillation for machine health prognosis considering edge deployment},
+  author={Cao, Yudong and Ni, Qing and Jia, Minping and Zhao, Xiaoli and Yan, Xiaoan},
+  journal={IEEE Internet of Things Journal},
+  volume={11},
+  number={16},
+  pages={27828--27839},
+  year={2024},
+  publisher={IEEE}
+}
+
+@article{wang2024adaptive,
+  title={Adaptive knowledge distillation-based lightweight intelligent fault diagnosis framework in IoT edge computing},
+  author={Wang, Yanzhi and Yu, Ziyang and Wu, Jinhong and Wang, Chu and Zhou, Qi and Hu, Jiexiang},
+  journal={IEEE Internet of Things Journal},
+  volume={11},
+  number={13},
+  pages={23156--23169},
+  year={2024},
+  publisher={IEEE}
+}
+
+@article{zhou2024federated,
+  title={Federated distillation and blockchain empowered secure knowledge sharing for internet of medical things},
+  author={Zhou, Xiaokang and Huang, Wang and Liang, Wei and Yan, Zheng and Ma, Jianhua and Pan, Yi and Wang, Kevin I-Kai},
+  journal={Information Sciences},
+  volume={662},
+  pages={120217},
+  year={2024},
+  publisher={Elsevier}
+}
+
+@article{gibbs2023combining,
+  title={Combining multiple tiny machine learning models for multimodal context-aware stress recognition on constrained microcontrollers},
+  author={Gibbs, Michael and Woodward, Kieran and Kanjo, Eiman},
+  journal={Ieee Micro},
+  volume={44},
+  number={3},
+  pages={67--75},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{rostami2025real,
+  title={Real-time stress detection from raw noisy ppg signals using lstm model leveraging tinyml},
+  author={Rostami, Amin and Tarvirdizadeh, Bahram and Alipour, Khalil and Ghamari, Mohammad},
+  journal={Arabian Journal for Science and Engineering},
+  volume={50},
+  number={10},
+  pages={6959--6981},
+  year={2025},
+  publisher={Springer}
+}
+
+@article{zeynali2025non,
+  title={Non-invasive blood glucose monitoring using PPG signals with various deep learning models and implementation using TinyML},
+  author={Zeynali, Mahdi and Alipour, Khalil and Tarvirdizadeh, Bahram and Ghamari, Mohammad},
+  journal={Scientific Reports},
+  volume={15},
+  number={1},
+  pages={581},
+  year={2025},
+  publisher={Nature Publishing Group UK London}
+}
+
+@inproceedings{thota2024tinyml,
+  title={TinyML for ECG biometrics on resource constrained devices},
+  author={Thota, Yogeswar Reddy and Nikoubin, Tooraj},
+  booktitle={2024 IEEE Computer Society Annual Symposium on VLSI (ISVLSI)},
+  pages={521--526},
+  year={2024},
+  organization={IEEE}
+}
+
+@article{lamaakal2025comprehensive,
+  title={A comprehensive survey on tiny machine learning for human behavior analysis},
+  author={Lamaakal, Ismail and Essahraui, Siham and Maleh, Yassine and El Makkaoui, Khalid and Ouahbi, Ibrahim and Bouami, Mouncef Filali and Abd El-Latif, Ahmed A and Almousa, May and Peng, Jialiang and Niyato, Dusit},
+  journal={IEEE Internet of Things Journal},
+  year={2025},
+  publisher={IEEE}
+}
+
+@article{abadade2023comprehensive,
+  title={A comprehensive survey on tinyml},
+  author={Abadade, Youssef and Temouden, Anas and Bamoumen, Hatim and Benamar, Nabil and Chtouki, Yousra and Hafid, Abdelhakim Senhaji},
+  journal={IEEE access},
+  volume={11},
+  pages={96892--96922},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{banerjee2023heart,
+  title={Heart rate variability-based mental stress detection: an explainable machine learning approach},
+  author={Banerjee, Jyoti Sekhar and Mahmud, Mufti and Brown, David},
+  journal={SN Computer Science},
+  volume={4},
+  number={2},
+  pages={176},
+  year={2023},
+  publisher={Springer}
+}
+
+@article{moser2024explainable,
+  title={An explainable deep learning approach for stress detection in wearable sensor measurements},
+  author={Moser, Martin Karl and Ehrhart, Maximilian and Resch, Bernd},
+  journal={Sensors},
+  volume={24},
+  number={16},
+  pages={5085},
+  year={2024},
+  publisher={MDPI}
+}
+
+@article{jaber2022medically,
+  title={Medically-oriented design for explainable AI for stress prediction from physiological measurements: D. Jaber et al.},
+  author={Jaber, Dalia and Hajj, Hazem and Maalouf, Fadi and El-Hajj, Wassim},
+  journal={BMC Medical Informatics and Decision Making},
+  volume={22},
+  number={1},
+  pages={38},
+  year={2022},
+  publisher={Springer}
+}
+
+@article{bolpagni2024personalized,
+  title={Personalized stress detection using biosignals from wearables: A scoping review},
+  author={Bolpagni, Marco and Pardini, Susanna and Dianti, Marco and Gabrielli, Silvia},
+  journal={Sensors},
+  volume={24},
+  number={10},
+  pages={3221},
+  year={2024},
+  publisher={MDPI}
+}
+
+@article{abdelaal2024exploring,
+  title={Exploring the applications of explainability in wearable data analytics: Systematic literature review},
+  author={Abdelaal, Yasmin and Aupetit, Micha{\"e}l and Baggag, Abdelkader and Al-Thani, Dena},
+  journal={Journal of Medical Internet Research},
+  volume={26},
+  pages={e53863},
+  year={2024},
+  publisher={JMIR Publications Toronto, Canada}
+}
+
+@article{adarsh2024mental,
+  title={Mental stress detection from ultra-short heart rate variability using explainable graph convolutional network with network pruning and quantisation},
+  author={Adarsh, V and Gangadharan, GR},
+  journal={Machine Learning},
+  volume={113},
+  number={8},
+  pages={5467--5494},
+  year={2024},
+  publisher={Springer}
+}
+
+@article{huang2024driver,
+  title={Driver state recognition with physiological signals: Based on deep feature fusion and feature selection techniques},
+  author={Huang, Jing and Huang, Xinyu and Peng, Yang and Hu, Lin},
+  journal={Biomedical Signal Processing and Control},
+  volume={93},
+  pages={106204},
+  year={2024},
+  publisher={Elsevier}
+}
+
+@article{peng2022continuous,
+  title={A continuous late-onset sepsis prediction algorithm for preterm infants using multi-channel physiological signals from a patient monitor},
+  author={Peng, Zheng and Varisco, Gabriele and Long, Xi and Liang, Rong-Hao and Kommers, Deedee and Cottaar, Ward and Andriessen, Peter and Van Pul, Carola},
+  journal={IEEE Journal of Biomedical and Health Informatics},
+  volume={27},
+  number={1},
+  pages={550--561},
+  year={2022},
+  publisher={IEEE}
+}
+
+@article{shikha2024optimization,
+  title={Optimization of wearable biosensor data for stress classification using machine learning and explainable AI},
+  author={Shikha, Shikha and Sethia, Divyashikha and Indu, S},
+  journal={IEEE Access},
+  volume={12},
+  pages={169310--169327},
+  year={2024},
+  publisher={IEEE}
+}
+
+@article{niu2025explainable,
+  title={Explainable machine learning model based on EEG, ECG, and clinical features for predicting neurological outcomes in cardiac arrest patient},
+  author={Niu, Yanxiang and Chen, Xin and Fan, Jianqi and Liu, Chunli and Fang, Menghao and Liu, Ziquan and Meng, Xiangyan and Liu, Yanqing and Lu, Lu and Fan, Haojun},
+  journal={Scientific Reports},
+  volume={15},
+  number={1},
+  pages={11498},
+  year={2025},
+  publisher={Nature Publishing Group UK London}
+}
+
+@incollection{morales2022exploring,
+  title={Exploring interpretable machine learning methods and biomarkers to classifying occupational stress of the health workers},
+  author={Morales, Anal{\'u}cia Schiaffino and de Oliveira Ourique, Fabr{\'\i}cio and Mor{\'a}s, Laura Derengoski and Cazella, Silvio C{\'e}sar},
+  booktitle={Machine Learning for Smart Environments/Cities: An IoT Approach},
+  pages={105--124},
+  year={2022},
+  publisher={Springer}
+}
+
+@inproceedings{turcan2021emotion,
+  title={Emotion-infused models for explainable psychological stress detection},
+  author={Turcan, Elsbeth and Muresan, Smaranda and McKeown, Kathleen},
+  booktitle={Proceedings of the 2021 conference of the North American Chapter of the Association for Computational Linguistics: human language technologies},
+  pages={2895--2909},
+  year={2021}
+}
+
+@article{bahameish2024strategies,
+  title={Strategies for reliable stress recognition: A machine learning approach using heart rate variability features},
+  author={Bahameish, Mariam and Stockman, Tony and Requena Carri{\'o}n, Jes{\'u}s},
+  journal={Sensors},
+  volume={24},
+  number={10},
+  pages={3210},
+  year={2024},
+  publisher={MDPI}
+}
+
+@article{huang2025ai,
+  title={AI-driven wearable bioelectronics in digital healthcare},
+  author={Huang, Guangqi and Chen, Xiaofeng and Liao, Caizhi},
+  journal={Biosensors},
+  volume={15},
+  number={7},
+  pages={410},
+  year={2025},
+  publisher={MDPI}
+}
+
+@article{heydari2025tiny,
+  title={Tiny machine learning and on-device inference: A survey of applications, challenges, and future directions},
+  author={Heydari, Soroush and Mahmoud, Qusay H},
+  journal={Sensors},
+  volume={25},
+  number={10},
+  pages={3191},
+  year={2025},
+  publisher={MDPI}
+}
+
+@article{wong2023ultra,
+  title={Ultra-efficient edge cardiac disease detection towards real-time precision health},
+  author={Wong, Junhua and Nerbonne, Jeanne and Zhang, Qingxue},
+  journal={IEEE Access},
+  volume={12},
+  pages={9940--9951},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{frey2026biogap,
+  title={BioGAP-Ultra: A modular edge-AI platform for wearable multimodal biosignal acquisition and processing},
+  author={Frey, Sebastian and Spacone, Giusy and Cossettini, Andrea and Guermandi, Marco and Schilk, Philipp and Benini, Luca and Kartsch, Victor},
+  journal={IEEE Transactions on Biomedical Circuits and Systems},
+  year={2026},
+  publisher={IEEE}
+}
+
+@article{dere2023event,
+  title={Event-driven edge deep learning decoder for real-time gesture classification and neuro-inspired rehabilitation device control},
+  author={Dere, Mustapha Deji and Jo, Ji-Hun and Lee, Boreom},
+  journal={IEEE Transactions on Instrumentation and Measurement},
+  volume={72},
+  pages={1--12},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{mitro2023ai,
+  title={AI-enabled smart wristband providing real-time vital signs and stress monitoring},
+  author={Mitro, Nikos and Argyri, Katerina and Pavlopoulos, Lampros and Kosyvas, Dimitrios and Karagiannidis, Lazaros and Kostovasili, Margarita and Misichroni, Fay and Ouzounoglou, Eleftherios and Amditis, Angelos},
+  journal={Sensors},
+  volume={23},
+  number={5},
+  pages={2821},
+  year={2023},
+  publisher={MDPI}
+}
+
+@article{shumba2023wearable,
+  title={Wearable technologies and AI at the far edge for chronic heart failure prevention and management: a systematic review and prospects},
+  author={Shumba, Angela-Tafadzwa and Montanaro, Teodoro and Sergi, Ilaria and Bramanti, Alessia and Ciccarelli, Michele and Rispoli, Antonella and Carrizzo, Albino and De Vittorio, Massimo and Patrono, Luigi},
+  journal={Sensors},
+  volume={23},
+  number={15},
+  pages={6896},
+  year={2023},
+  publisher={MDPI}
+}
+
+@article{khowaja2021toward,
+  title={Toward soft real-time stress detection using wrist-worn devices for human workspaces: SA Khowaja et al.},
+  author={Khowaja, Sunder Ali and Prabono, Aria Ghora and Setiawan, Feri and Yahya, Bernardo Nugroho and Lee, Seok-Lyong},
+  journal={Soft Computing},
+  volume={25},
+  number={4},
+  pages={2793--2820},
+  year={2021},
+  publisher={Springer}
+}
+
+@article{taskasaplidis2024review,
+  title={Review of stress detection methods using wearable sensors},
+  author={Taskasaplidis, Georgios and Fotiadis, Dimitris A and Bamidis, Panagiotis D},
+  journal={IEEe Access},
+  volume={12},
+  pages={38219--38246},
+  year={2024},
+  publisher={IEEE}
+}
+
+@article{kyrou2024deep,
+  title={Deep learning approaches for stress detection: A survey},
+  author={Kyrou, Maria and Kompatsiaris, Ioannis and Petrantonakis, Panagiotis C},
+  journal={IEEE Transactions on Affective Computing},
+  volume={16},
+  number={2},
+  pages={499--517},
+  year={2024},
+  publisher={IEEE}
+}
+
+@article{zalabarria2020low,
+  title={A low-cost, portable solution for stress and relaxation estimation based on a real-time fuzzy algorithm},
+  author={Zalabarria, Unai and Irigoyen, Eloy and Martinez, Raquel and Larrea, Mikel and Salazar-Ramirez, Asier},
+  journal={IEEE Access},
+  volume={8},
+  pages={74118--74128},
+  year={2020},
+  publisher={IEEE}
+}
+
+@article{xiang2025multi,
+  title={A multi-modal deep learning approach for stress detection using physiological signals: integrating time and frequency domain features},
+  author={Xiang, Jun-Zhi and Wang, Qin-Yong and Fang, Zhi-Bin and Esquivel, James A and Su, Zhi-Xian},
+  journal={Frontiers in physiology},
+  volume={16},
+  pages={1584299},
+  year={2025},
+  publisher={Frontiers Media SA}
+}
+
+@article{lee2021driving,
+  title={Driving stress detection using multimodal convolutional neural networks with nonlinear representation of short-term physiological signals},
+  author={Lee, Jaewon and Lee, Hyeonjeong and Shin, Miyoung},
+  journal={Sensors},
+  volume={21},
+  number={7},
+  pages={2381},
+  year={2021},
+  publisher={MDPI}
+}
+
+@article{gonzalez2021machine,
+  title={Machine Learning for personalised stress detection: Inter-individual variability of EEG-ECG markers for acute-stress response},
+  author={Gonzalez-Carabarin, Lizeth and Castellanos-Alvarado, EA and Castro-Garcia, P and Garcia-Ramirez, MA},
+  journal={Computer methods and programs in biomedicine},
+  volume={209},
+  pages={106314},
+  year={2021},
+  publisher={Elsevier}
+}
+
+@article{wang2024lightweight,
+  title={Lightweight intrusion detection model based on CNN and knowledge distillation},
+  author={Wang, Long-Hui and Dai, Qi and Du, Tony and Chen, Li-fang},
+  journal={Applied Soft Computing},
+  volume={165},
+  pages={112118},
+  year={2024},
+  publisher={Elsevier}
+}
+
+@article{xu2022contrastive,
+  title={Contrastive adversarial knowledge distillation for deep model compression in time-series regression tasks},
+  author={Xu, Qing and Chen, Zhenghua and Ragab, Mohamed and Wang, Chao and Wu, Min and Li, Xiaoli},
+  journal={Neurocomputing},
+  volume={485},
+  pages={242--251},
+  year={2022},
+  publisher={Elsevier}
+}
+
+@article{liu2024large,
+  title={Large language model guided knowledge distillation for time series anomaly detection},
+  author={Liu, Chen and He, Shibo and Zhou, Qihang and Li, Shizhong and Meng, Wenchao},
+  journal={arXiv preprint arXiv:2401.15123},
+  year={2024}
+}
+
+@article{kang20221d,
+  title={1D convolutional autoencoder-based PPG and GSR signals for real-time emotion classification},
+  author={Kang, Dong-Hyun and Kim, Deok-Hwan},
+  journal={IEEe Access},
+  volume={10},
+  pages={91332--91345},
+  year={2022},
+  publisher={IEEE}
+}
+
+@article{ao2023continual,
+  title={Continual deep learning for time series modeling},
+  author={Ao, Sio-Iong and Fayek, Haytham},
+  journal={Sensors},
+  volume={23},
+  number={16},
+  pages={7167},
+  year={2023},
+  publisher={MDPI}
+}
+
+@article{karim2020adversarial,
+  title={Adversarial attacks on time series},
+  author={Karim, Fazle and Majumdar, Somshubra and Darabi, Houshang},
+  journal={IEEE transactions on pattern analysis and machine intelligence},
+  volume={43},
+  number={10},
+  pages={3309--3320},
+  year={2020},
+  publisher={IEEE}
+}
+
+@article{wang2020deep,
+  title={Deep multi-scale fusion neural network for multi-class arrhythmia detection},
+  author={Wang, Ruxin and Fan, Jianping and Li, Ye},
+  journal={IEEE journal of biomedical and health informatics},
+  volume={24},
+  number={9},
+  pages={2461--2472},
+  year={2020},
+  publisher={IEEE}
+}
+
+@article{yang2023multi,
+  title={A multi-view multi-scale neural network for multi-label ECG classification},
+  author={Yang, Shunxiang and Lian, Cheng and Zeng, Zhigang and Xu, Bingrong and Zang, Junbin and Zhang, Zhidong},
+  journal={IEEE Transactions on Emerging Topics in Computational Intelligence},
+  volume={7},
+  number={3},
+  pages={648--660},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{li2023eeg,
+  title={EEG-based emotion recognition using spatial-temporal-connective features via multi-scale CNN},
+  author={Li, Tianyi and Fu, Baole and Wu, Zixuan and Liu, Yinhua},
+  journal={IEEE Access},
+  volume={11},
+  pages={41859--41867},
+  year={2023},
+  publisher={IEEE}
+}
+
+@article{yazdan2022efficient,
+  title={An efficient multi-scale convolutional neural network based multi-class brain MRI classification for SaMD},
+  author={Yazdan, Syed Ali and Ahmad, Rashid and Iqbal, Naeem and Rizwan, Atif and Khan, Anam Nawaz and Kim, Do-Hyeun},
+  journal={Tomography},
+  volume={8},
+  number={4},
+  pages={1905--1927},
+  year={2022},
+  publisher={MDPI}
+}
+
+@article{zhao2025multi,
+  title={Multi-scale convolutional transformer network for motor imagery brain-computer interface},
+  author={Zhao, Wei and Zhang, Baocan and Zhou, Haifeng and Wei, Dezhi and Huang, Chenxi and Lan, Quan},
+  journal={Scientific Reports},
+  volume={15},
+  number={1},
+  pages={12935},
+  year={2025},
+  publisher={Nature Publishing Group UK London}
+}
+
+@article{sah2021stress,
+  title={Stress classification and personalization: Getting the most out of the least},
+  author={Sah, Ramesh Kumar and Ghasemzadeh, Hassan},
+  journal={arXiv preprint arXiv:2107.05666},
+  year={2021}
+}
+
+@article{benchekroun2023cross,
+  title={Cross dataset analysis for generalizability of HRV-based stress detection models},
+  author={Benchekroun, Mouna and Velmovitsky, Pedro Elkind and Istrate, Dan and Zalc, Vincent and Morita, Plinio Pelegrini and Lenne, Dominique},
+  journal={Sensors},
+  volume={23},
+  number={4},
+  pages={1807},
+  year={2023},
+  publisher={Multidisciplinary Digital Publishing Institute}
+}
+
+@article{shahbazi2023early,
+  title={Early life stress detection using physiological signals and machine learning pipelines},
+  author={Shahbazi, Zeinab and Byun, Yung-Cheol},
+  journal={Biology},
+  volume={12},
+  number={1},
+  pages={91},
+  year={2023},
+  publisher={MDPI}
+}
+
+@article{vos2023ensemble,
+  title={Ensemble machine learning model trained on a new synthesized dataset generalizes well for stress prediction using wearable devices},
+  author={Vos, Gideon and Trinh, Kelly and Sarnyai, Zoltan and Azghadi, Mostafa Rahimi},
+  journal={Journal of Biomedical Informatics},
+  volume={148},
+  pages={104556},
+  year={2023},
+  publisher={Elsevier}
+}
+
+@article{adler2022machine,
+  title={Machine learning for passive mental health symptom prediction: Generalization across different longitudinal mobile sensing studies},
+  author={Adler, Daniel A and Wang, Fei and Mohr, David C and Choudhury, Tanzeem},
+  journal={Plos one},
+  volume={17},
+  number={4},
+  pages={e0266516},
+  year={2022},
+  publisher={Public Library of Science San Francisco, CA USA}
+}
+
+@article{dziezyc2020can,
+  title={Can we ditch feature engineering? end-to-end deep learning for affect recognition from physiological sensor data},
+  author={Dzie{\.z}yc, Maciej and Gjoreski, Martin and Kazienko, Przemys{\l}aw and Saganowski, Stanis{\l}aw and Gams, Matja{\v{z}}},
+  journal={Sensors},
+  volume={20},
+  number={22},
+  pages={6535},
+  year={2020},
+  publisher={MDPI}
+}
+
+@article{siirtola2020comparison,
+  title={Comparison of regression and classification models for user-independent and personal stress detection},
+  author={Siirtola, Pekka and R{\"o}ning, Juha},
+  journal={Sensors},
+  volume={20},
+  number={16},
+  pages={4402},
+  year={2020},
+  publisher={MDPI}
+}

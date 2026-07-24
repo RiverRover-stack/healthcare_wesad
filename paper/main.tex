@@ -1,0 +1,218 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{balance}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Deep Learning on the Edge: Highly Compressed Multi-Scale CNNs for Wearable Stress Detection via Knowledge Distillation}
+
+\author{
+\IEEEauthorblockN{Meet Kagathara}
+\IEEEauthorblockA{(2350460)}
+\and
+\IEEEauthorblockN{Kaustubh Agrawal}
+\IEEEauthorblockA{}
+}
+
+\maketitle
+
+\begin{abstract}
+Continuous physiological stress detection using wearable devices is fundamentally limited by the severe memory and computational constraints of edge hardware. Traditional deep learning models achieve high classification accuracy but require significant power and memory, making them unsuitable for standard microcontrollers. In this paper, we propose a highly compressed, privacy-preserving edge-AI pipeline validated on the WESAD dataset. First, we develop a Multi-Scale 1D-CNN (Teacher) with three parallel convolutional branches (kernel sizes 8, 32, 64) to capture both high-frequency cardiac (ECG) and low-frequency electrodermal (EDA) stress responses concurrently. We then employ Knowledge Distillation to transfer this complex learned representation into an ultra-lightweight MicroCNN (Student) architecture utilizing depthwise-separable convolutions. Our proposed Student model reduces the trainable parameter count from approximately 266K to 5.3K, achieving an overall cross-validated accuracy of 99.8\% and F1-score of 0.996 while shrinking the memory footprint by a factor of 30. SHAP-based explainability analysis reveals that the Student model develops a divergent but physiologically valid decision pathway, relying on thermophysiological and electrodermal features rather than the Teacher's ECG-dominant strategy. Deployment benchmarks on a Raspberry Pi 4 demonstrate 2.38\,ms inference latency per 60-second window, confirming viability for continuous, real-time on-device stress monitoring.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Wearable Computing, Edge AI, Knowledge Distillation, TinyML, Stress Detection, WESAD, Explainability, SHAP
+\end{IEEEkeywords}
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+The rapid proliferation of wearable electronics has catalyzed a paradigm shift in personalized healthcare, enabling the continuous, unobtrusive monitoring of human physiological signals~\cite{gedam2021review, taskasaplidis2024review}. A primary and highly valuable application of this data is the automated detection of physiological stress, which has profound implications for mental health tracking, cardiovascular risk assessment, and chronic disease management~\cite{kyrou2024deep}. Publicly available datasets, most notably the WESAD (Wearable Stress and Affect Detection) dataset~\cite{schmidt2018introducing}, provide rich, multimodal sensor data streams including Electrocardiogram (ECG), Electrodermal Activity (EDA), Electromyogram (EMG), body temperature, respiration, and three-axis accelerometer readings from chest-worn sensors sampled at 700\,Hz.
+
+While deep neural networks, particularly 1D Convolutional Neural Networks (CNNs), have demonstrated state-of-the-art performance in classifying complex affective states from these raw signals~\cite{li2020stress, benita2024stress, xiang2025multi}, their real-world deployment on wearable edge devices remains a critical bottleneck. Standard CNN architectures possess hundreds of thousands, if not millions, of parameters. Running these networks requires computational throughput and battery capacities that drastically exceed the hardware limitations of standard microcontrollers, often referred to as the TinyML domain~\cite{abadade2023comprehensive, heydari2025tiny}.
+
+Historically, the solution to this hardware limitation has been offloading computation to the cloud. Wearables transmit raw biometric data via Bluetooth or Wi-Fi to centralized servers for inference. However, this approach introduces severe latency, rapidly depletes wearable battery life due to continuous radio transmission, and raises significant data privacy concerns regarding the transmission of sensitive health biometrics~\cite{rashid2023stress}.
+
+To bridge this gap and enable true local processing, this paper introduces a Knowledge Distillation framework~\cite{hinton2015distilling} engineered specifically for multimodal physiological time-series data. We compress a heavy, Multi-Scale CNN into a sub-kilobyte Student model capable of true edge execution without sacrificing the predictive power required for reliable, medical-grade stress detection. Our key contributions are:
+
+\begin{enumerate}
+    \item A \textbf{Multi-Scale 1D-CNN Teacher} architecture with three parallel convolutional branches (kernel sizes 8, 32, 64) designed to capture stress responses across distinct physiological timescales, achieving F1\,=\,0.981 under LOSO cross-validation.
+    \item A \textbf{Knowledge Distillation pipeline} that transfers the Teacher's learned representations into a 5.3K-parameter MicroCNN, achieving F1\,=\,0.996 --- a 50$\times$ compression with no performance loss.
+    \item \textbf{SHAP-based explainability analysis} revealing divergent decision pathways between Teacher and Student models, with physiological interpretations for both strategies.
+    \item \textbf{Real hardware deployment benchmarks} on a Raspberry Pi 4 demonstrating 2.38\,ms inference latency, confirming viability for continuous on-device stress monitoring.
+\end{enumerate}
+
+% ============================================================================
+\section{Related Work}
+% ============================================================================
+
+\subsection{Wearable Stress Detection}
+
+Wearable stress detection has evolved from hand-crafted feature engineering with classical machine learning to end-to-end deep learning approaches. Early work on the WESAD dataset demonstrated that Random Forests and SVMs applied to statistical, temporal, and frequency-domain features extracted from ECG, EDA, and respiration signals achieved accuracies above 90\% under subject-dependent evaluation~\cite{schmidt2018introducing}. Subsequent studies explored CNNs applied directly to raw physiological signals, eliminating the need for manual feature extraction~\cite{dziezyc2020can, li2020stress, abdelfattah2025machine}. Benita et al.~\cite{benita2024stress} demonstrated CNN-based stress classification on WESAD achieving competitive accuracy, while Behinaein et al.~\cite{behinaein2021transformer} explored Transformer architectures for ECG-based stress detection. Kang et al.~\cite{kang2021classification} proposed CNN-LSTM hybrids that leverage both spatial and temporal dependencies in ECG signals.
+
+More recently, multimodal fusion strategies have gained attention. Xiang et al.~\cite{xiang2025multi} integrated time and frequency domain features across multiple signal modalities, and Rashid et al.~\cite{rashid2023stress} proposed context-aware sensor fusion for IoT-based stress detection. Hermawan et al.~\cite{hermawan2025multimodal} explored multimodal architectures combining PPG, EDA, and accelerometer data. Cross-subject generalization remains a critical challenge, with Benchekroun et al.~\cite{benchekroun2023cross} demonstrating significant performance degradation in cross-dataset HRV-based stress models, and Siirtola and R\"oning~\cite{siirtola2020comparison} comparing user-independent versus personalized approaches.
+
+\subsection{Knowledge Distillation for Edge Health Monitoring}
+
+Knowledge Distillation (KD), introduced by Hinton et al.~\cite{hinton2015distilling}, transfers the ``dark knowledge'' encoded in a large Teacher model's soft probability distributions to a smaller Student model. While KD has been extensively applied in computer vision and NLP, its application to physiological signal processing remains relatively underexplored. Liu et al.~\cite{liu2023emotionkd} proposed EmotionKD, a cross-modal KD framework for emotion recognition from physiological signals, demonstrating that soft targets improve Student generalization. Cao et al.~\cite{cao2024online} applied online KD for machine health prognosis with edge deployment considerations, while Wang et al.~\cite{wang2024adaptive} developed adaptive KD-based lightweight models for IoT fault diagnosis. Xu et al.~\cite{xu2022contrastive} proposed contrastive adversarial KD specifically for time-series model compression, and Wang et al.~\cite{wang2024lightweight} demonstrated lightweight CNN compression via KD for resource-constrained environments.
+
+In the TinyML domain specifically, Gibbs et al.~\cite{gibbs2023combining} combined multiple tiny models for multimodal stress recognition on constrained microcontrollers, achieving practical deployment on sub-milliwatt devices. Rostami et al.~\cite{rostami2025real} demonstrated real-time stress detection from PPG signals using LSTM-based TinyML, and Jaiswal et al.~\cite{jaiswal2024tinystressnet} proposed TinyStressNet for lightweight on-device stress classification. However, none of these works combine multi-scale temporal feature extraction, response-based KD, and real hardware benchmarking into a unified pipeline --- a gap this paper addresses.
+
+\subsection{Explainability in Physiological Computing}
+
+The clinical adoption of deep learning for stress detection requires models whose decisions can be physiologically interpreted. Moser et al.~\cite{moser2024explainable} applied explainable deep learning to wearable stress detection, revealing modality-specific feature importance patterns. Banerjee et al.~\cite{banerjee2023heart} used SHAP~\cite{lundberg2017unified} for HRV-based mental stress detection, demonstrating that explainable approaches can achieve competitive accuracy while providing clinically meaningful insights. Jaber et al.~\cite{jaber2022medically} proposed medically-oriented explainable AI for stress prediction, emphasizing the importance of domain-grounded interpretations. Shikha et al.~\cite{shikha2024optimization} optimized wearable biosensor data for stress classification using SHAP-based feature selection, and Adarsh and Gangadharan~\cite{adarsh2024mental} combined graph convolutional networks with model pruning and quantization for explainable HRV-based stress detection. Abdelaal et al.~\cite{abdelaal2024exploring} provided a systematic review of explainability applications in wearable data analytics, identifying SHAP as the most widely adopted attribution method.
+
+While these works establish the value of explainability for stress detection models, none examine whether Knowledge Distillation preserves or alters the Teacher's learned physiological feature attributions --- a question we address through comparative SHAP analysis.
+
+% ============================================================================
+\section{Methodology}
+% ============================================================================
+
+\subsection{Dataset and Preprocessing}
+
+We use the WESAD dataset~\cite{schmidt2018introducing}, comprising multimodal physiological recordings from 15 subjects (S2--S17, excluding S12 due to data corruption) wearing a chest-mounted RespiBAN device sampling at 700\,Hz. Six signal modalities are used: ECG, EDA, EMG, Respiration, Temperature, and 3-axis Accelerometer magnitude.
+
+For preprocessing, each signal modality undergoes Butterworth filtering tailored to its physiological frequency range: ECG is bandpass filtered at 0.5--40\,Hz, EDA is lowpass filtered at 1\,Hz, EMG is bandpass filtered at 20--300\,Hz, Respiration at 0.1--0.5\,Hz, and Temperature at 0.1\,Hz. Following filtering, all signals are z-score normalized per subject to account for inter-individual baseline differences (e.g., varying resting heart rates or baseline skin conductance levels).
+
+The synchronized signals are segmented into 60-second temporal windows with a 30-second overlap (50\%). A purity threshold of 80\% ensures that each window is assigned a single dominant label, and a 5-second transition buffer discards samples near label boundaries to prevent ambiguous state-change artifacts. Only baseline (label\,=\,1) and stress (label\,=\,2) conditions are retained, yielding a binary classification task. For the deep learning pipeline, signals are downsampled from 700\,Hz to 64\,Hz via polyphase resampling, producing input tensors of shape $(6, 3840)$ per window.
+
+\subsection{The Multi-Scale Teacher CNN}
+
+Physiological responses to acute stress occur at fundamentally different temporal scales. Cardiovascular changes (measured via ECG) manifest rapidly within seconds, respiratory patterns operate on medium timescales of several seconds, while electrodermal responses (measured via EDA sweat gland activity) accumulate slowly over minutes. To capture this complex multi-modal variance, we designed a Multi-Scale 1D-CNN Teacher model with three parallel convolutional branches:
+
+\begin{itemize}
+    \item \textbf{Small Kernel ($k$\,=\,8):} Captures high-frequency morphological variations in the ECG signal, corresponding to heartbeat-level features at 64\,Hz.
+    \item \textbf{Medium Kernel ($k$\,=\,32):} Designed for medium-term respiratory and movement artifacts spanning approximately 0.5 seconds.
+    \item \textbf{Large Kernel ($k$\,=\,64):} Engineered to track slow-moving galvanic skin responses and temperature shifts spanning approximately 1 second at 64\,Hz.
+\end{itemize}
+
+Each branch consists of two convolutional layers with Batch Normalization and ReLU activation, followed by Global Average Pooling (GAP). The feature maps from all three branches are concatenated into a 192-dimensional embedding and passed through a fully connected classifier block (192$\rightarrow$128$\rightarrow$64$\rightarrow$2). The fully realized Teacher model contains 266,914 trainable parameters.
+
+\subsection{The MicroCNN Student Model}
+
+To achieve TinyML compatibility, we architected an ultra-lightweight Student model. Standard spatial convolutions were replaced with Depthwise-Separable Convolutions, which reduce Multiply-Accumulate (MAC) operations by splitting the standard convolution into two steps: a spatial convolution performed independently over each channel, followed by a $1 \times 1$ pointwise convolution to combine the channels. The network culminates directly in a Global Average Pooling layer, completely bypassing computationally expensive dense linear layers. This streamlined architecture limits the Student model to merely 5,352 parameters.
+
+\subsection{Knowledge Distillation Framework}
+
+To train the mathematically constrained MicroCNN, we employed response-based Knowledge Distillation~\cite{hinton2015distilling}. Rather than training the Student exclusively on hard binary labels, the model learns to mimic the ``soft'' probability distributions generated by the frozen Teacher model. The distillation loss is computed as:
+
+\begin{equation}
+\mathcal{L}_{\text{KD}} = \alpha \cdot T^2 \cdot D_{\text{KL}}\!\left(\sigma\!\left(\frac{z_s}{T}\right) \middle\| \sigma\!\left(\frac{z_t}{T}\right)\right) + (1-\alpha) \cdot \mathcal{L}_{\text{CE}}(z_s, y)
+\label{eq:kd}
+\end{equation}
+
+\noindent where $z_s$ and $z_t$ are Student and Teacher logits respectively, $T$\,=\,4 is the temperature parameter that softens the probability distributions, $\alpha$\,=\,0.7 weights the relative contribution of Teacher knowledge versus ground truth, $\sigma$ denotes the softmax function, $D_{\text{KL}}$ is the Kullback-Leibler divergence, and $\mathcal{L}_{\text{CE}}$ is the standard cross-entropy loss against hard labels $y$. The $T^2$ scaling factor restores gradient magnitudes that are otherwise reduced by the temperature-scaled softmax.
+
+Class imbalance (64\% baseline, 36\% stress) is addressed through a two-layer defense: a WeightedRandomSampler enforcing 50/50 class balance per mini-batch, and inverse-frequency class weights in the cross-entropy component. All models are trained using AdamW ($\text{lr}=3\times10^{-4}$, weight decay $=10^{-3}$) with gradient clipping (max norm\,=\,1.0) and ReduceLROnPlateau scheduling.
+
+% ============================================================================
+\section{Experiments and Results}
+% ============================================================================
+
+\subsection{Experimental Setup and LOSO Validation}
+
+To ensure robust evaluation and prevent algorithmic data leakage, all models were evaluated using strict Leave-One-Subject-Out (LOSO) cross-validation across all 15 subjects in the WESAD dataset. This validation strategy ensures the model is tested on physiological profiles it has never seen during training, simulating real-world deployment to new users. Teacher models were trained for 40 epochs per fold and Student models for 30 epochs.
+
+\subsection{Classification Performance}
+
+Table~\ref{tab:results} presents the complete classification results under LOSO cross-validation. The Multi-Scale Teacher CNN established a strong baseline with 98.7\% accuracy and F1\,=\,0.981, substantially outperforming traditional machine learning approaches (Logistic Regression F1\,=\,0.947, Random Forest F1\,=\,0.956).
+
+Remarkably, the distilled MicroCNN not only matched but exceeded the Teacher's performance, achieving 99.8\% accuracy, F1\,=\,0.996, and a near-perfect ROC-AUC of 1.000 with only 5,352 parameters. This represents a 50$\times$ parameter reduction with a simultaneous F1 improvement of +0.015. The MiniCNN-LSTM (distilled) also achieved strong results (F1\,=\,0.993) but at 5.4$\times$ the parameter cost.
+
+The standalone MicroCNN (trained without KD) achieved F1\,=\,0.957 --- a 0.039 F1-score gap compared to its distilled counterpart. This improvement is particularly dramatic for challenging subjects: subject S8 collapsed to F1$\approx$0.75 under standalone training but achieved F1\,=\,1.00 with distillation, demonstrating that KD rescues performance on physiologically atypical individuals.
+
+\begin{table}[t]
+\centering
+\caption{Binary stress detection results under LOSO cross-validation on WESAD. Best results in \textbf{bold}.}
+\label{tab:results}
+\begin{tabular}{lrcccc}
+\toprule
+Model & Params & Acc. & Recall & F1 & AUC \\
+\midrule
+Random Baseline & -- & .500 & .358 & .364 & -- \\
+Majority Baseline & -- & .670 & .000 & .000 & -- \\
+EDA Threshold & -- & .600 & .866 & .792 & -- \\
+\midrule
+Logistic Regression & 150\,f. & .964 & .954 & .947 & .976 \\
+Random Forest & 150\,f. & .966 & .965 & .956 & .996 \\
+\midrule
+Teacher (Multi-Scale) & 266K & .987 & .986 & .981 & .995 \\
+MicroCNN (standalone) & 5.3K & .968 & .975 & .957 & .985 \\
+\textbf{MicroCNN (distilled)} & \textbf{5.3K} & \textbf{.998} & \textbf{.996} & \textbf{.996} & \textbf{1.000} \\
+TinyCNN (distilled) & 15K & .986 & .979 & .979 & .995 \\
+MiniCNN-LSTM (distilled) & 28K & .995 & .993 & .993 & .997 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Knowledge Distillation Ablation}
+
+We conducted a hyperparameter sweep over temperature $T \in \{1, 2, 4, 8\}$ and distillation weight $\alpha \in \{0.3, 0.5, 0.7, 0.9\}$. All 16 combinations yielded F1\,$\approx$\,0.997 with negligible variance, indicating that the KD pipeline is robust to hyperparameter selection on this task. The final configuration ($T$\,=\,4, $\alpha$\,=\,0.7) was selected based on theoretical considerations from~\cite{hinton2015distilling}.
+
+\subsection{SHAP Explainability Analysis}
+
+To assess whether Knowledge Distillation preserves physiologically meaningful decision strategies, we applied SHAP (SHapley Additive exPlanations)~\cite{lundberg2017unified} using GradientExplainer to both Teacher and Student models.
+
+\textbf{Teacher model:} The SHAP channel importance analysis revealed a strongly ECG-dominant decision strategy. ECG received the highest mean absolute SHAP value (0.00093), approximately 4$\times$ higher than any other channel. This is physiologically consistent: ECG captures heart rate variability (HRV), the most well-established autonomic stress biomarker. The remaining channels ranked as Temperature (0.00028) $>$ EDA (0.00024) $>$ ACC (0.00023) $>$ EMG (0.00016) $>$ Respiration ($\approx$0).
+
+\textbf{Student model:} The distilled MicroCNN developed a fundamentally different feature attribution pattern. ECG importance collapsed from 0.00093 to 0.00012 ($\sim$8$\times$ reduction), while Temperature (0.00047) and EDA (0.00035) became the dominant channels. We attribute this divergence to architectural constraints: the MicroCNN lacks multi-scale branches and therefore cannot capture the multi-heartbeat HRV features that require large receptive fields. Instead, the Student converged on computationally cheaper slow-changing signals --- peripheral skin temperature (sympathetic vasoconstriction) and tonic EDA (sweat gland activity) --- that are extractable with shallow depthwise-separable convolutions.
+
+\textbf{Key finding:} Despite divergent decision pathways, both models achieve near-identical classification performance. This suggests that binary stress detection admits multiple valid physiological ``routes,'' and that edge-constrained architectures naturally gravitate toward thermophysiological and electrodermal features that are computationally cheaper to process. Per-subject analysis confirmed that both models struggle on the same subjects (S2, S3), indicating that the Student's alternative pathway does not introduce new failure modes.
+
+\subsection{Edge Deployment on Raspberry Pi}
+
+To validate real-world deployment feasibility, the distilled MicroCNN was exported to ONNX format and benchmarked on a Raspberry Pi 4 (ARM Cortex-A72, 4\,GB RAM) using ONNX Runtime with single-threaded inference. Table~\ref{tab:edge} presents the results.
+
+\begin{table}[t]
+\centering
+\caption{Edge deployment benchmarks on Raspberry Pi 4 (ARM Cortex-A72). Latency measured over 100 inference runs.}
+\label{tab:edge}
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Model size (ONNX) & 24.3\,KB \\
+Inference latency (mean $\pm$ std) & 2.38 $\pm$ 0.04\,ms \\
+Inference latency (P95) & 2.46\,ms \\
+Memory footprint (RSS) & 58.3\,MB \\
+CPU utilization (single thread) & 16.3\% \\
+Throughput & 421 windows/sec \\
+Real-time factor & 25,260$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The model classifies a 60-second physiological window in 2.38\,ms --- 25,260$\times$ faster than real-time. In a practical deployment scenario with 30-second sliding windows, inference consumes only 0.008\% of available CPU time, leaving the processor nearly entirely available for data acquisition, communication, and other tasks. The 24.3\,KB model size fits comfortably within the SRAM constraints of modern ARM Cortex-M microcontrollers, and the tight latency standard deviation ($\pm$0.04\,ms) provides the deterministic timing guarantees required for real-time clinical applications.
+
+Compared to existing TinyML stress detection approaches, Gibbs et al.~\cite{gibbs2023combining} reported multi-model ensembles on microcontrollers but without per-model latency breakdowns, and Rostami et al.~\cite{rostami2025real} achieved real-time PPG-based detection but on single-modality data without multi-scale temporal analysis. Our approach is, to our knowledge, the first to combine multi-scale physiological feature extraction, response-based KD, SHAP explainability, and real ARM hardware benchmarking into a single pipeline.
+
+% ============================================================================
+\section{Limitations and Future Work}
+% ============================================================================
+
+This study has several limitations. First, all experiments are conducted on a single dataset (WESAD) comprising 15 subjects in a controlled laboratory setting. Cross-dataset validation on SWELL-KW or DREAMER, and evaluation under free-living conditions, are necessary to establish clinical generalizability~\cite{benchekroun2023cross, darwish2025lab}. Second, the 60-second window length, while appropriate for capturing complete EDA responses, introduces latency that may be unacceptable for real-time alerting applications. Third, the near-zero SHAP attribution for the Respiration channel across both models suggests potential signal quality issues in the WESAD chest-mounted respiration sensor, warranting investigation with alternative respiratory measurement approaches.
+
+Future work will explore cross-dataset generalization, federated learning for privacy-preserving multi-site deployment~\cite{almadhor2025cross}, INT8 post-training quantization to further reduce the model footprint to sub-10\,KB levels, and deployment on dedicated neural processing units (NPUs) embedded in commercial smartwatch chipsets.
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+This research demonstrates that state-of-the-art physiological stress detection algorithms can be heavily compressed for edge-hardware constraints without meaningful loss in predictive accuracy. By leveraging a Multi-Scale 1D-CNN Teacher to capture complex multimodal physiological patterns, and subsequently applying Knowledge Distillation, we developed a 5.3K-parameter MicroCNN achieving F1\,=\,0.996 under strict LOSO cross-validation on the WESAD dataset --- a 50$\times$ compression that actually improves upon the Teacher's F1\,=\,0.981. SHAP analysis revealed that this performance is achieved through a divergent but physiologically valid decision pathway, with the compressed model relying on thermophysiological signals rather than the Teacher's ECG-dominant strategy. Deployment on a Raspberry Pi 4 confirmed 2.38\,ms inference latency at 24.3\,KB model size, establishing the viability of accurate, private, continuous stress monitoring entirely on-device.
+
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

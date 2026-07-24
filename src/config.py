@@ -26,15 +26,18 @@ Failure Modes:
     - Invalid parameters: Will cause downstream errors
 """
 
+import os
 from pathlib import Path
 
 # =============================================================================
 # PROJECT PATHS
 # =============================================================================
+# Overridable via env vars (e.g. when running on Kaggle/Colab); default to the
+# local Windows layout so existing behavior is unchanged when unset.
 
-PROJECT_ROOT = Path(r"d:\WESAD")
-DATA_DIR = PROJECT_ROOT / "WESAD"
-OUTPUT_DIR = PROJECT_ROOT / "outputs"
+PROJECT_ROOT = Path(os.environ.get("WESAD_ROOT", r"d:\WESAD"))
+DATA_DIR = Path(os.environ.get("WESAD_DATA_DIR", str(PROJECT_ROOT / "WESAD")))
+OUTPUT_DIR = Path(os.environ.get("WESAD_OUTPUT_DIR", str(PROJECT_ROOT / "outputs")))
 FEATURES_DIR = OUTPUT_DIR / "features"
 MODELS_DIR = OUTPUT_DIR / "models"
 REPORTS_DIR = OUTPUT_DIR / "reports"

@@ -155,7 +155,9 @@ def _eval_fold(model: nn.Module, loader: DataLoader) -> Dict[str, float]:
             metrics['roc_auc'] = 0.0
     else:
         metrics['roc_auc'] = 0.0
-    return metrics
+    # Cast to plain Python floats: sklearn returns numpy scalars, and those
+    # make the saved checkpoint unloadable under weights_only=True.
+    return {k: float(v) for k, v in metrics.items()}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -249,7 +251,10 @@ def train_student_kd_loso(
                 print("  Run train_teacher.py first to generate teacher checkpoints.")
                 continue
             teacher = create_teacher_cnn().to(DEVICE)
-            ckpt = torch.load(ckpt_path, map_location=DEVICE, weights_only=True)
+            # weights_only=False: these checkpoints also carry a 'metrics' dict
+            # containing a numpy float64 (roc_auc), which the weights_only=True
+            # unpickler rejects on torch >= 2.6. Our own artifact, so this is safe.
+            ckpt = torch.load(ckpt_path, map_location=DEVICE, weights_only=False)
             teacher.load_state_dict(ckpt['model_state'])
             teacher.freeze()  # sets eval() + requires_grad=False
 

@@ -88,7 +88,7 @@ def load_checkpoint(model: torch.nn.Module, ckpt_path: Path) -> torch.nn.Module:
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    obj = torch.load(ckpt_path, map_location="cpu")
+    obj = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     if isinstance(obj, dict):
         # try common key names

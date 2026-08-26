@@ -19,7 +19,7 @@ OUTPUT_PATH = "outputs/models/micro_cnn.onnx"
 os.makedirs("outputs/models", exist_ok=True)
 
 model = MicroCNN(in_channels=6, num_classes=2)
-state = torch.load(CHECKPOINT, map_location="cpu")
+state = torch.load(CHECKPOINT, map_location="cpu", weights_only=False)
 
 # Handle checkpoint format: dict with nested state_dict vs bare state_dict
 if isinstance(state, dict):

@@ -100,7 +100,9 @@ def _eval_fold(model: nn.Module, loader: DataLoader) -> Dict[str, float]:
             metrics['roc_auc'] = 0.0
     else:
         metrics['roc_auc'] = 0.0
-    return metrics
+    # Cast to plain Python floats: sklearn returns numpy scalars, and those
+    # make the saved checkpoint unloadable under weights_only=True.
+    return {k: float(v) for k, v in metrics.items()}
 
 
 def train_teacher_loso(windowed_data: Dict[str, WindowedData]) -> Dict:

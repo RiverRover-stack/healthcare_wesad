@@ -2,22 +2,36 @@
 SHAP Explainability Analysis for WESAD Multi-Scale CNN Teacher and MicroCNN Student
 
 Tasks:
-    1. Channel-level SHAP       -- which physiological signal matters most
+    1. Channel-level SHAP       -- which physiological signal matters most,
+                                   computed over all 15 LOSO folds (each fold's
+                                   own checkpoints, its own held-out test subject)
     2. Grad-CAM temporal        -- where in the 60-second window the model focuses
-                                   (applied to branch_small conv output before GAP)
-    3. Teacher vs Student SHAP  -- side-by-side channel importance comparison
+                                   (applied to branch_small conv output before GAP;
+                                   single representative fold)
+    3. Teacher vs Student SHAP  -- side-by-side channel importance comparison,
+                                   with per-fold Jensen-Shannon divergence and
+                                   Spearman rank correlation between the two
+                                   channel-importance distributions
     4. Per-class SHAP           -- stress vs baseline channel importance breakdown
+                                   (single representative fold)
 
 Usage:
     python shap_analysis.py
 
-Outputs (saved to outputs/reports/):
-    shap_channel_importance.png
+Respects WESAD_OUTPUT_DIR (via src/config.py) for both checkpoints (MODELS_DIR)
+and outputs (REPORTS_DIR) -- it previously shadowed both off its own ROOT, so it
+always read outputs/models/ regardless of which run's checkpoints were wanted.
+
+Outputs (saved to REPORTS_DIR):
+    shap_channel_importance.csv    -- fold, model, channel, mean_abs_shap, normalised_importance
+    shap_divergence.csv            -- fold, test_subject, js_divergence, spearman_rho
+    shap_channel_importance.png    -- regenerated from the CSV above, no re-run needed
+    shap_teacher_vs_student.png    -- regenerated from the CSV above, no re-run needed
     shap_gradcam_temporal.png
-    shap_teacher_vs_student.png
     shap_per_class.png
 """
 
+import csv
 import sys
 import random
 from pathlib import Path
@@ -26,15 +40,17 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")   # non-interactive backend — safe on headless / Windows
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import torch
 import shap
+from scipy.spatial.distance import jensenshannon
+from scipy.stats import spearmanr
 
 # ── project root on sys.path ──────────────────────────────────────────────────
 ROOT   = Path(__file__).parent
 SRC    = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from config import MODELS_DIR, REPORTS_DIR
 from data import load_all_subjects
 from preprocessing import process_all_subjects
 from segmentation import create_all_windows
@@ -44,13 +60,11 @@ from models.student  import MicroCNN
 
 # ── constants ─────────────────────────────────────────────────────────────────
 SIGNAL_NAMES    = ["ECG", "EDA", "EMG", "Resp", "Temp", "ACC"]
-LOSO_SUBJECT    = "S2"          # fold used for SHAP analysis
+GRADCAM_SUBJECT = "S2"          # representative fold for Grad-CAM / per-class SHAP
 N_BG            = 50            # background samples
 N_TEST          = 50            # test samples
 SAMPLE_RATE     = 64            # Hz
 WINDOW_SEC      = 60            # seconds
-REPORTS_DIR     = ROOT / "outputs" / "reports"
-MODELS_DIR      = ROOT / "outputs" / "models"
 DPI             = 300
 SEED            = 42
 
@@ -91,12 +105,10 @@ def load_checkpoint(model: torch.nn.Module, ckpt_path: Path) -> torch.nn.Module:
     obj = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     if isinstance(obj, dict):
-        # try common key names
         for key in ("state_dict", "model_state_dict", "model_state", "model"):
             if key in obj:
                 model.load_state_dict(obj[key])
                 return model
-        # assume the dict itself is the state_dict
         model.load_state_dict(obj)
     elif isinstance(obj, torch.nn.Module):
         return obj
@@ -106,14 +118,14 @@ def load_checkpoint(model: torch.nn.Module, ckpt_path: Path) -> torch.nn.Module:
     return model
 
 
-def build_datasets(windowed):
+def build_datasets(windowed, test_subject: str):
     """
-    Build training (all subjects except LOSO_SUBJECT) and
-    test (LOSO_SUBJECT only) datasets.
+    Build training (all subjects except test_subject) and
+    test (test_subject only) datasets.
     """
     all_sids  = list(windowed.keys())
-    train_ids = [s for s in all_sids if s != LOSO_SUBJECT]
-    test_ids  = [LOSO_SUBJECT]
+    train_ids = [s for s in all_sids if s != test_subject]
+    test_ids  = [test_subject]
 
     train_ds = WESADDataset(windowed, subject_ids=train_ids)
     test_ds  = WESADDataset(windowed, subject_ids=test_ids)
@@ -159,21 +171,13 @@ def _extract_stress_shap(shap_output, n_samples: int, n_channels: int = 6):
         first = np.array(shap_output[0])
 
         if first.ndim == 3 and first.shape[-1] == 2:
-            # SHAP 0.50: list of n arrays, each (C, T, 2)
-            # Stack → (n, C, T, 2), take stress class (index 1) on last axis
             stacked = np.stack(shap_output, axis=0)   # (n, C, T, 2)
             sv = stacked[..., 1]                       # (n, C, T)
-
         elif first.ndim == 2 and len(shap_output) == 2:
-            # Classic: list of 2 arrays each (C, T) — single sample, 2 classes
             sv = np.array(shap_output[1])[np.newaxis]  # (1, C, T)
-
         elif first.ndim == 3 and first.shape[0] == n_samples:
-            # Classic: list of 2 arrays each (n, C, T) — 2 classes
             sv = np.array(shap_output[1])              # (n, C, T)
-
         else:
-            # Fallback: try stacking and see if last dim is 2
             stacked = np.stack(shap_output, axis=0)
             if stacked.ndim == 4 and stacked.shape[-1] == 2:
                 sv = stacked[..., 1]
@@ -195,11 +199,9 @@ def _extract_stress_shap(shap_output, n_samples: int, n_channels: int = 6):
 
     sv = np.nan_to_num(sv, nan=0.0, posinf=0.0, neginf=0.0)
 
-    # Ensure (n, C, T) — transpose if axes are swapped
     if sv.ndim == 3 and sv.shape[1] != n_channels and sv.shape[2] == n_channels:
         sv = sv.transpose(0, 2, 1)
 
-    print(f"    [debug] stress SHAP shape after extraction: {sv.shape}")
     return sv
 
 
@@ -216,7 +218,6 @@ def compute_shap_channel(model: torch.nn.Module,
     shap_raw    = explainer.shap_values(test_x)
 
     sv_stress   = _extract_stress_shap(shap_raw, n_samples=len(test_x))
-    # mean |SHAP| over samples (axis 0) and time (axis 2) → (6,)
     importance  = np.mean(np.abs(sv_stress), axis=(0, 2))
     assert importance.shape == (6,), (
         f"Channel importance shape {importance.shape} != (6,). "
@@ -225,59 +226,198 @@ def compute_shap_channel(model: torch.nn.Module,
     return importance, sv_stress
 
 
+def normalize_simplex(v: np.ndarray) -> np.ndarray:
+    """Normalise a non-negative importance vector to sum to 1."""
+    total = v.sum()
+    return v / total if total > 0 else np.full_like(v, 1.0 / len(v))
+
+
 def save_figure(fig: plt.Figure, name: str) -> None:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORTS_DIR / name
     fig.savefig(path, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved → {path}")
+    print(f"  Saved -> {path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 1 — Channel-level SHAP (teacher)
+# Task 1+3 — Teacher vs Student channel attribution over all 15 LOSO folds
 # ─────────────────────────────────────────────────────────────────────────────
 
-def task1_channel_shap(teacher, background, test_x):
-    print("\n[Task 1] Channel-level SHAP (GradientExplainer) ...")
-    importance, shap_values = compute_shap_channel(teacher, background, test_x)
+CHANNEL_IMPORTANCE_FIELDS = ['fold', 'test_subject', 'model', 'channel',
+                             'mean_abs_shap', 'normalised_importance']
+DIVERGENCE_FIELDS = ['fold', 'test_subject', 'js_divergence', 'spearman_rho']
 
-    # ranked printout for the paper
-    ranked = sorted(zip(SIGNAL_NAMES, importance), key=lambda t: t[1], reverse=True)
-    print("\n  Mean |SHAP| per channel (stress class, teacher):")
-    for rank, (name, val) in enumerate(ranked, 1):
-        print(f"    {rank}. {name:>5}: {val:.6f}")
 
-    # bar chart
-    order   = [x[0] for x in ranked]
-    vals    = [x[1] for x in ranked]
-    colours = [C_TEACHER] * 6
+def run_all_folds_channel_attribution(windowed) -> None:
+    """
+    For every LOSO fold: load that fold's teacher and student checkpoints,
+    sample background from that fold's training subjects and test windows
+    from its held-out subject, compute channel-level SHAP importance for
+    both models, then the Jensen-Shannon divergence and Spearman rank
+    correlation between their (simplex-normalised) importance vectors.
+
+    Writes shap_channel_importance.csv and shap_divergence.csv immediately
+    per fold, so a crash partway through leaves completed folds on disk.
+    """
+    all_subjects = sorted(windowed.keys())
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    ci_path = REPORTS_DIR / "shap_channel_importance.csv"
+    div_path = REPORTS_DIR / "shap_divergence.csv"
+
+    with open(ci_path, 'w', newline='', encoding='utf-8') as f:
+        csv.writer(f).writerow(CHANNEL_IMPORTANCE_FIELDS)
+    with open(div_path, 'w', newline='', encoding='utf-8') as f:
+        csv.writer(f).writerow(DIVERGENCE_FIELDS)
+
+    n_completed = 0
+    for fold_idx, test_subject in enumerate(all_subjects):
+        teacher_ckpt = MODELS_DIR / f"teacher_loso_{test_subject}.pt"
+        student_ckpt = MODELS_DIR / f"MicroCNN_distilled_loso_{test_subject}.pt"
+        if not (teacher_ckpt.exists() and student_ckpt.exists()):
+            print(f"  Fold {fold_idx+1:02d} [{test_subject}]: SKIP (missing checkpoint)")
+            continue
+
+        train_ds, test_ds = build_datasets(windowed, test_subject)
+        bg_x, _ = sample_tensors(train_ds, N_BG, seed=SEED)
+        test_x, test_y = sample_tensors(test_ds, N_TEST, seed=SEED + 1)
+
+        teacher = MultiScaleTeacherCNN(in_channels=6, num_classes=2)
+        teacher = load_checkpoint(teacher, teacher_ckpt)
+        teacher.eval()
+
+        student = MicroCNN(in_channels=6, num_classes=2)
+        student = load_checkpoint(student, student_ckpt)
+        student.eval()
+
+        imp_teacher, _ = compute_shap_channel(teacher, bg_x, test_x)
+        imp_student, _ = compute_shap_channel(student, bg_x, test_x)
+
+        p = normalize_simplex(imp_teacher)
+        q = normalize_simplex(imp_student)
+
+        js_dist = jensenshannon(p, q, base=2)
+        js_div = float(js_dist ** 2) if np.isfinite(js_dist) else float('nan')
+        rho, _ = spearmanr(imp_teacher, imp_student)
+
+        with open(ci_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            for name, mean_abs, norm in zip(SIGNAL_NAMES, imp_teacher, p):
+                writer.writerow([fold_idx, test_subject, 'teacher', name, mean_abs, norm])
+            for name, mean_abs, norm in zip(SIGNAL_NAMES, imp_student, q):
+                writer.writerow([fold_idx, test_subject, 'student', name, mean_abs, norm])
+
+        with open(div_path, 'a', newline='', encoding='utf-8') as f:
+            csv.writer(f).writerow([fold_idx, test_subject, js_div, rho])
+
+        print(f"  Fold {fold_idx+1:02d} [{test_subject}]: JS divergence={js_div:.4f}  "
+              f"Spearman rho={rho:.4f}")
+        n_completed += 1
+
+    if n_completed == 0:
+        print("  ERROR: no folds had both checkpoints -- nothing computed.")
+        return
+
+    # Summary across folds
+    js_vals, rho_vals = [], []
+    with open(div_path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            js_vals.append(float(row['js_divergence']))
+            rho_vals.append(float(row['spearman_rho']))
+    print(f"\n  Channel attribution summary ({n_completed} folds):")
+    print(f"    JS divergence : {np.mean(js_vals):.4f} +/- {np.std(js_vals):.4f}")
+    print(f"    Spearman rho  : {np.mean(rho_vals):.4f} +/- {np.std(rho_vals):.4f}")
+
+
+def plot_channel_importance_from_csv() -> None:
+    """Regenerate shap_channel_importance.png purely from the CSV -- no SHAP re-run."""
+    path = REPORTS_DIR / "shap_channel_importance.csv"
+    if not path.exists():
+        print("  Skipping shap_channel_importance.png -- CSV not found")
+        return
+
+    # mean normalised importance per (model, channel) across folds
+    sums, counts = {}, {}
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            key = (row['model'], row['channel'])
+            sums[key] = sums.get(key, 0.0) + float(row['normalised_importance'])
+            counts[key] = counts.get(key, 0) + 1
+
+    teacher_vals = [sums[('teacher', ch)] / counts[('teacher', ch)] for ch in SIGNAL_NAMES]
+    ranked = sorted(zip(SIGNAL_NAMES, teacher_vals), key=lambda t: t[1], reverse=True)
+    order = [x[0] for x in ranked]
+    vals = [x[1] for x in ranked]
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    bars = ax.bar(order, vals, color=colours, edgecolor="white", linewidth=0.8)
-    ax.bar_label(bars, fmt="%.5f", padding=3, fontsize=8)
-    ax.set_title("Teacher CNN — Mean |SHAP| per Signal Channel (Stress Class)",
+    bars = ax.bar(order, vals, color=C_TEACHER, edgecolor="white", linewidth=0.8)
+    ax.bar_label(bars, fmt="%.4f", padding=3, fontsize=8)
+    ax.set_title("Teacher CNN -- Mean Normalised SHAP Importance per Channel\n"
+                 "(stress class, mean across all LOSO folds)",
                  fontsize=13, fontweight="bold", pad=12)
     ax.set_xlabel("Physiological Signal", fontsize=11)
-    ax.set_ylabel("Mean |SHAP value|", fontsize=11)
+    ax.set_ylabel("Mean normalised |SHAP| (simplex)", fontsize=11)
     ax.set_ylim(0, max(vals) * 1.18)
     fig.tight_layout()
     save_figure(fig, "shap_channel_importance.png")
-    return shap_values   # pass to task 4
+
+
+def plot_teacher_vs_student_from_csv() -> None:
+    """Regenerate shap_teacher_vs_student.png purely from the CSV -- no SHAP re-run."""
+    path = REPORTS_DIR / "shap_channel_importance.csv"
+    if not path.exists():
+        print("  Skipping shap_teacher_vs_student.png -- CSV not found")
+        return
+
+    sums, counts = {}, {}
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            key = (row['model'], row['channel'])
+            sums[key] = sums.get(key, 0.0) + float(row['normalised_importance'])
+            counts[key] = counts.get(key, 0) + 1
+
+    imp_teacher = np.array([sums[('teacher', ch)] / counts[('teacher', ch)] for ch in SIGNAL_NAMES])
+    imp_student = np.array([sums[('student', ch)] / counts[('student', ch)] for ch in SIGNAL_NAMES])
+
+    x = np.arange(len(SIGNAL_NAMES))
+    w = 0.38
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    bars_t = ax.bar(x - w/2, imp_teacher, width=w, color=C_TEACHER,
+                    label="Teacher (MultiScaleTeacherCNN, ~266K params)",
+                    edgecolor="white", linewidth=0.8)
+    bars_s = ax.bar(x + w/2, imp_student, width=w, color=C_STUDENT,
+                    label="Student (MicroCNN, ~5.3K params)",
+                    edgecolor="white", linewidth=0.8)
+    ax.bar_label(bars_t, fmt="%.4f", padding=3, fontsize=7, rotation=45)
+    ax.bar_label(bars_s, fmt="%.4f", padding=3, fontsize=7, rotation=45)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(SIGNAL_NAMES, fontsize=11)
+    # Fixed: the old title asserted the paper's conclusion ("Preserved
+    # physiological attention after 50x compression") as a caption instead of
+    # a finding -- state what the chart is, let the numbers make the claim.
+    ax.set_title(
+        "Teacher vs Student Channel Attribution (stress class)\n"
+        "Mean normalised SHAP importance across all LOSO folds",
+        fontsize=12, fontweight="bold", pad=12
+    )
+    ax.set_xlabel("Physiological Signal Channel", fontsize=11)
+    ax.set_ylabel("Mean normalised |SHAP value| (simplex)", fontsize=11)
+    ax.legend(fontsize=10)
+    ax.set_ylim(0, max(imp_teacher.max(), imp_student.max()) * 1.25)
+    fig.tight_layout()
+    save_figure(fig, "shap_teacher_vs_student.png")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 2 (REPLACEMENT) — Grad-CAM on branch_small conv output
+# Task 2 — Grad-CAM on branch_small conv output (single representative fold)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def task2_gradcam_temporal(teacher, test_x, test_y):
     """
     Grad-CAM applied to the output of the SECOND Conv1d in branch_small
     (layer index 3 in the Sequential), just before AdaptiveAvgPool1d.
-
-    This gives genuine temporal localisation: a heatmap of shape (B, 64, T')
-    where T' ≈ 3840 (same-length padding was used).
-
-    We visualise the mean Grad-CAM activation across stress and baseline windows.
     """
     print("\n[Task 2] Grad-CAM temporal analysis on branch_small ...")
 
@@ -285,16 +425,13 @@ def task2_gradcam_temporal(teacher, test_x, test_y):
     activations_store: dict = {}
     gradients_store:   dict = {}
 
-    # ── register hooks on branch_small[3] (second Conv1d, before GAP) ────────
-    # branch_small is nn.Sequential: [Conv, BN, ReLU, Conv, BN, ReLU, GAP]
-    #                                  0    1    2    3    4    5     6
     target_layer = teacher.branch_small[3]   # second Conv1d
 
     def fwd_hook(module, inp, out):
-        activations_store["act"] = out   # (B, 64, T')
+        activations_store["act"] = out
 
     def bwd_hook(module, grad_in, grad_out):
-        gradients_store["grad"] = grad_out[0]  # (B, 64, T')
+        gradients_store["grad"] = grad_out[0]
 
     h_fwd = target_layer.register_forward_hook(fwd_hook)
     h_bwd = target_layer.register_full_backward_hook(bwd_hook)
@@ -306,22 +443,19 @@ def task2_gradcam_temporal(teacher, test_x, test_y):
 
     for i in range(n_samples):
         teacher.zero_grad()
-        x_i = test_x[i:i+1].clone().requires_grad_(True)   # (1, 6, 3840)
-        logits = teacher(x_i)                               # (1, 2)
+        x_i = test_x[i:i+1].clone().requires_grad_(True)
+        logits = teacher(x_i)
 
-        # grad w.r.t. stress class (index 1)
         logits[0, 1].backward()
 
-        act  = activations_store["act"].detach()    # (1, 64, T')
-        grad = gradients_store["grad"].detach()     # (1, 64, T')
+        act  = activations_store["act"].detach()
+        grad = gradients_store["grad"].detach()
 
-        # Grad-CAM: weight channels by global-average-pooled gradient
-        weights  = grad.mean(dim=-1, keepdim=True)  # (1, 64, 1)
-        cam_map  = (weights * act).sum(dim=1)        # (1, T')
-        cam_map  = torch.clamp(cam_map, min=0)       # ReLU
-        cam_map  = cam_map.squeeze(0).numpy()        # (T',)
+        weights  = grad.mean(dim=-1, keepdim=True)
+        cam_map  = (weights * act).sum(dim=1)
+        cam_map  = torch.clamp(cam_map, min=0)
+        cam_map  = cam_map.squeeze(0).numpy()
 
-        # min-max normalise per window
         cam_min, cam_max = cam_map.min(), cam_map.max()
         if cam_max > cam_min:
             cam_map = (cam_map - cam_min) / (cam_max - cam_min)
@@ -346,7 +480,6 @@ def task2_gradcam_temporal(teacher, test_x, test_y):
     print(f"  Stress windows used:   {len(cam_stress)}")
     print(f"  Baseline windows used: {len(cam_baseline)}")
 
-    # smooth for readability
     from numpy.lib.stride_tricks import sliding_window_view
     def smooth(arr, k=64):
         pad = k // 2
@@ -378,52 +511,7 @@ def task2_gradcam_temporal(teacher, test_x, test_y):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Task 3 — Teacher vs Student SHAP comparison
-# ─────────────────────────────────────────────────────────────────────────────
-
-def task3_teacher_vs_student(teacher, student, background_t, background_s,
-                              test_x, test_x_s):
-    print("\n[Task 3] Teacher vs Student SHAP comparison ...")
-
-    # teacher importance (already computed but re-run for independence)
-    imp_teacher, _ = compute_shap_channel(teacher, background_t, test_x)
-    imp_student, _ = compute_shap_channel(student, background_s, test_x_s)
-
-    print("\n  Mean |SHAP| per channel — Teacher vs Student (stress class):")
-    print(f"  {'Channel':>6}  {'Teacher':>10}  {'Student':>10}")
-    for name, vt, vs in zip(SIGNAL_NAMES, imp_teacher, imp_student):
-        print(f"  {name:>6}  {vt:10.6f}  {vs:10.6f}")
-
-    x   = np.arange(len(SIGNAL_NAMES))
-    w   = 0.38
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-    bars_t = ax.bar(x - w/2, imp_teacher, width=w, color=C_TEACHER,
-                    label="Teacher (MultiScaleTeacherCNN, ~266K params)",
-                    edgecolor="white", linewidth=0.8)
-    bars_s = ax.bar(x + w/2, imp_student, width=w, color=C_STUDENT,
-                    label="Student (MicroCNN, ~5.3K params)",
-                    edgecolor="white", linewidth=0.8)
-    ax.bar_label(bars_t, fmt="%.5f", padding=3, fontsize=7, rotation=45)
-    ax.bar_label(bars_s, fmt="%.5f", padding=3, fontsize=7, rotation=45)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(SIGNAL_NAMES, fontsize=11)
-    ax.set_title(
-        "Knowledge Distillation — SHAP Channel Importance: Teacher vs Student\n"
-        "Preserved physiological attention after 50× compression",
-        fontsize=12, fontweight="bold", pad=12
-    )
-    ax.set_xlabel("Physiological Signal Channel", fontsize=11)
-    ax.set_ylabel("Mean |SHAP value| (stress class)", fontsize=11)
-    ax.legend(fontsize=10)
-    ax.set_ylim(0, max(imp_teacher.max(), imp_student.max()) * 1.25)
-    fig.tight_layout()
-    save_figure(fig, "shap_teacher_vs_student.png")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Task 4 — Per-class SHAP (stress vs baseline)
+# Task 4 — Per-class SHAP (stress vs baseline, single representative fold)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def task4_per_class_shap(teacher, background, test_x, test_y):
@@ -440,8 +528,8 @@ def task4_per_class_shap(teacher, background, test_x, test_y):
     def chan_importance(sv, mask):
         if mask.sum() == 0:
             return np.zeros(6)
-        subset = sv[mask]        # (k, 6, 3840)
-        return np.mean(np.abs(subset), axis=(0, 2))   # (6,)
+        subset = sv[mask]
+        return np.mean(np.abs(subset), axis=(0, 2))
 
     imp_stress = chan_importance(sv_stress_raw, stress_mask)
     imp_base   = chan_importance(sv_stress_raw, base_mask)
@@ -486,60 +574,35 @@ def task4_per_class_shap(teacher, background, test_x, test_y):
 if __name__ == "__main__":
     set_seed(SEED)
 
-    # ── 1. Load data pipeline ─────────────────────────────────────────────────
     print("=" * 60)
     print("  WESAD SHAP Explainability Analysis")
     print("=" * 60)
+    print(f"  MODELS_DIR : {MODELS_DIR}")
+    print(f"  REPORTS_DIR: {REPORTS_DIR}")
 
     print("\n[Data] Loading subjects and running pipeline ...")
     subjects  = load_all_subjects()
     subjects  = process_all_subjects(subjects)
     windowed  = create_all_windows(subjects)
-    train_ds, test_ds = build_datasets(windowed)
 
-    print(f"  Training set : {len(train_ds):,} windows")
-    print(f"  Test set (S2): {len(test_ds):,} windows")
+    # ── Task 1+3: channel attribution over all 15 folds ───────────────────────
+    print("\n[Task 1+3] Teacher vs Student channel attribution over all LOSO folds ...")
+    run_all_folds_channel_attribution(windowed)
+    plot_channel_importance_from_csv()
+    plot_teacher_vs_student_from_csv()
 
-    # ── 2. Sample background + test batches ───────────────────────────────────
-    bg_x, _     = sample_tensors(train_ds, N_BG,   seed=SEED)
+    # ── Task 2 & 4: single representative fold ────────────────────────────────
+    train_ds, test_ds = build_datasets(windowed, GRADCAM_SUBJECT)
+    bg_x, _ = sample_tensors(train_ds, N_BG, seed=SEED)
     test_x, test_y = sample_tensors(test_ds, N_TEST, seed=SEED + 1)
 
-    print(f"\n  background shape : {tuple(bg_x.shape)}")
-    print(f"  test shape       : {tuple(test_x.shape)}")
-    print(f"  stress in test   : {test_y.sum()} / {len(test_y)}")
-
-    # ── 3. Load teacher ───────────────────────────────────────────────────────
-    print(f"\n[Models] Loading teacher checkpoint (LOSO {LOSO_SUBJECT}) ...")
     teacher = MultiScaleTeacherCNN(in_channels=6, num_classes=2)
-    teacher = load_checkpoint(teacher, MODELS_DIR / f"teacher_loso_{LOSO_SUBJECT}.pt")
+    teacher = load_checkpoint(teacher, MODELS_DIR / f"teacher_loso_{GRADCAM_SUBJECT}.pt")
     teacher.eval()
-    print(f"  Teacher params: {sum(p.numel() for p in teacher.parameters()):,}")
 
-    # ── 4. Load student ───────────────────────────────────────────────────────
-    print(f"\n[Models] Loading student checkpoint (LOSO {LOSO_SUBJECT}) ...")
-    student = MicroCNN(in_channels=6, num_classes=2)
-    student = load_checkpoint(student, MODELS_DIR / f"MicroCNN_distilled_loso_{LOSO_SUBJECT}.pt")
-    student.eval()
-    print(f"  Student params: {sum(p.numel() for p in student.parameters()):,}")
-
-    # ── 5. Run tasks ──────────────────────────────────────────────────────────
-    # Task 1: Channel-level SHAP (teacher)
-    teacher_shap_values = task1_channel_shap(teacher, bg_x, test_x)
-
-    # Task 2 (replacement): Grad-CAM temporal on branch_small
     task2_gradcam_temporal(teacher, test_x, test_y)
-
-    # Task 3: Teacher vs Student SHAP comparison
-    # Use SAME background for both (same signal space, same N_BG)
-    task3_teacher_vs_student(teacher, student,
-                             background_t=bg_x,
-                             background_s=bg_x,
-                             test_x=test_x,
-                             test_x_s=test_x)
-
-    # Task 4: Per-class SHAP (stress vs baseline)
     task4_per_class_shap(teacher, bg_x, test_x, test_y)
 
     print("\n" + "=" * 60)
-    print("  All figures saved to outputs/reports/")
+    print(f"  All figures saved to {REPORTS_DIR}")
     print("=" * 60)

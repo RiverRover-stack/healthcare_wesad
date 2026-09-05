@@ -18,6 +18,7 @@ Outputs:
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -30,7 +31,7 @@ from segmentation import create_all_windows
 from data.dl_dataset import WESADDataset
 from models.student import STUDENT_REGISTRY
 from models.distillation import train_student_kd_loso
-from training.loso import SMOKE_FOLDS, SMOKE_EPOCHS
+from training.loso import SMOKE_FOLDS, SMOKE_EPOCHS, write_manifest
 from evaluation.efficiency import get_efficiency_report, print_efficiency_table
 from evaluation.results import save_latex_tables
 
@@ -50,6 +51,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    start_time = datetime.now(timezone.utc).isoformat()
     set_all_seeds(RANDOM_SEED)
     create_directories()
 
@@ -122,6 +124,10 @@ def main():
         acc_results = load_results()
         save_latex_tables(accuracy_data=acc_results, efficiency_data=eff_results)
         print("\n  LaTeX tables saved to outputs/reports/")
+
+    write_manifest('students', start_time, extra={
+        'smoke': args.smoke, 'models': [n for n, _ in models_to_run], 'modes': modes_to_run,
+    })
 
     print_section_header("DONE")
     print("  Next steps:")

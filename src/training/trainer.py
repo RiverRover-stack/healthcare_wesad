@@ -36,9 +36,11 @@ from utils import set_all_seeds
 from training.loso import (
     DEVICE, SMOKE_FOLDS, SMOKE_EPOCHS,
     make_fold_split, make_balanced_sampler, compute_class_weights,
-    evaluate_model, loader_subject_ids, append_fold_record,
+    evaluate_model, loader_subject_ids, append_fold_record, default_run_tag,
+    write_manifest,
 )
 import csv
+from datetime import datetime, timezone
 
 # Training hyperparameters — sourced from config.DL_CONFIG (single source of truth)
 BATCH_SIZE   = DL_CONFIG['batch_size']
@@ -53,6 +55,8 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData], smoke: bool = Fal
     Returns aggregated metrics (mean/std of the selected-checkpoint test scores).
     """
     create_directories()
+    start_time = datetime.now(timezone.utc).isoformat()
+    run_tag = default_run_tag()
 
     all_subjects = sorted(windowed_data.keys())
     n_epochs = SMOKE_EPOCHS if smoke else EPOCHS
@@ -183,7 +187,7 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData], smoke: bool = Fal
         }, ckpt_path)
 
         append_fold_record({
-            'model': 'Teacher', 'mode': 'teacher', 'run_tag': 'smoke' if smoke else '',
+            'model': 'Teacher', 'mode': 'teacher', 'run_tag': run_tag,
             'fold_idx': fold_idx, 'test_subject': test_subject,
             'val_subjects': '|'.join(split.val_subjects),
             'n_train_windows': len(split.train_idx),
@@ -233,6 +237,10 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData], smoke: bool = Fal
 
     if not smoke:
         _save_comparison_csv(aggregated)
+
+    write_manifest('teacher', start_time, extra={
+        'smoke': smoke, 'n_epochs': n_epochs, 'n_folds_run': len(fold_metrics),
+    })
     return aggregated
 
 

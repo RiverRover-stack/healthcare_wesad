@@ -47,7 +47,7 @@ from utils import set_all_seeds
 from training.loso import (
     DEVICE,
     make_fold_split, make_balanced_sampler, compute_class_weights,
-    evaluate_model, loader_subject_ids, append_fold_record,
+    evaluate_model, loader_subject_ids, append_fold_record, default_run_tag,
 )
 import csv
 
@@ -328,7 +328,7 @@ def train_student_kd_loso(
         }, ckpt_out)
 
         append_fold_record({
-            'model': model_name, 'mode': mode, 'run_tag': run_tag or '',
+            'model': model_name, 'mode': mode, 'run_tag': run_tag or default_run_tag(),
             'fold_idx': fold_idx, 'test_subject': test_subject,
             'val_subjects': '|'.join(split.val_subjects),
             'n_train_windows': len(split.train_idx),
@@ -398,6 +398,7 @@ def _append_to_comparison_csv(
     then appends the fresh result.
     """
     csv_path = REPORTS_DIR / "model_comparison.csv"
+    header = ["Model", "Params", "Accuracy", "Recall", "F1", "ROC-AUC"]
 
     label = f"{model_name} ({mode})"
 
@@ -417,17 +418,23 @@ def _append_to_comparison_csv(
         f"{results['roc_auc']['mean']:.3f} +/- {results['roc_auc']['std']:.3f}",
     ]
 
-    # Read existing rows; drop stale row for this label if present
+    # Read existing rows; drop stale row for this label and any pre-existing
+    # header (rewritten below) if present -- a file created by this function
+    # alone (e.g. students trained before the teacher) must still end up
+    # with a header, or anything parsing by column name misreads it.
     existing_rows = []
     if csv_path.exists():
         with open(csv_path, 'r', newline='', encoding='utf-8') as f:
-            for row in csv.reader(f):
-                if row and row[0] != label:
-                    existing_rows.append(row)
+            rows = list(csv.reader(f))
+        if rows and rows[0] and rows[0][0].strip().lower() == 'model':
+            rows = rows[1:]
+        existing_rows = [row for row in rows if row and row[0] != label]
 
     existing_rows.append(new_row)
 
     with open(csv_path, 'w', newline='', encoding='utf-8') as f:
-        csv.writer(f).writerows(existing_rows)
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(existing_rows)
 
     print(f"\n  Results appended to {csv_path}")

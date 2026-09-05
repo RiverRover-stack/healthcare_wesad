@@ -17,6 +17,7 @@ Outputs:
 """
 
 import csv
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional
@@ -32,7 +33,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config import REPORTS_DIR
+from config import REPORTS_DIR, OUTPUT_DIR, RANDOM_SEED, DL_CONFIG
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 SMOKE_FOLDS = 2
@@ -193,6 +194,15 @@ def loader_subject_ids(loader: DataLoader) -> set:
     return {underlying.samples[i][2] for i in subset.indices}
 
 
+def default_run_tag() -> str:
+    """
+    Fallback run tag derived from the output directory name (e.g. 'run_20260906_101500'
+    or 'smoke_20260905_123712'), so no per_fold_results.csv row is ever left with a
+    blank run_tag even outside the ablation sweep, which supplies its own (e.g. 'T4_a0.7').
+    """
+    return OUTPUT_DIR.name
+
+
 def append_fold_record(row: Dict) -> None:
     """Append one fold's results to REPORTS_DIR/per_fold_results.csv immediately."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -200,11 +210,63 @@ def append_fold_record(row: Dict) -> None:
     write_header = not path.exists()
 
     record = {k: row.get(k, '') for k in PER_FOLD_FIELDS}
-    record.setdefault('timestamp', datetime.now(timezone.utc).isoformat())
-    record['timestamp'] = row.get('timestamp', record['timestamp'])
+    if not record.get('timestamp'):
+        record['timestamp'] = datetime.now(timezone.utc).isoformat()
 
     with open(path, 'a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=PER_FOLD_FIELDS)
         if write_header:
             writer.writeheader()
         writer.writerow(record)
+
+
+def _get_git_sha() -> str:
+    try:
+        import subprocess
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        return subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=str(repo_root), text=True,
+        ).strip()
+    except Exception:
+        return 'unknown'
+
+
+def write_manifest(phase: str, start_time: str, extra: Optional[Dict] = None) -> None:
+    """
+    Merge one phase's provenance into OUTPUT_DIR/manifest.json: git SHA,
+    torch/device/CUDA info, seed (+ the per-fold seeding scheme), the full
+    DL_CONFIG, and start/end timestamps. Keyed by phase, so teacher/students/
+    ablation runs sharing one WESAD_OUTPUT_DIR accumulate into a single file
+    rather than overwriting each other.
+    """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    path = OUTPUT_DIR / "manifest.json"
+    manifest = {}
+    if path.exists():
+        try:
+            with open(path, encoding='utf-8') as f:
+                manifest = json.load(f)
+        except Exception:
+            manifest = {}
+
+    entry = {
+        'phase': phase,
+        'git_sha': _get_git_sha(),
+        'torch_version': torch.__version__,
+        'device': str(DEVICE),
+        'cuda_available': torch.cuda.is_available(),
+        'cuda_device_name': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+        'seed': RANDOM_SEED,
+        'seed_scheme': 'RANDOM_SEED + fold_idx, set per fold (so --smoke reproduces '
+                       'the first folds of a full run bit-for-bit)',
+        'dl_config': DL_CONFIG,
+        'start_time': start_time,
+        'end_time': datetime.now(timezone.utc).isoformat(),
+    }
+    if extra:
+        entry.update(extra)
+    manifest[phase] = entry
+
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(manifest, f, indent=2, default=str)
+    print(f"  Manifest updated -> {path}")

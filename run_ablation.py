@@ -24,12 +24,16 @@ Outputs:
 
 import argparse
 import csv
+import hashlib
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from config import RANDOM_SEED, REPORTS_DIR, create_directories, DL_CONFIG
+import torch
+
+from config import RANDOM_SEED, REPORTS_DIR, MODELS_DIR, create_directories, DL_CONFIG
 from utils import set_all_seeds, print_section_header
 from data import load_all_subjects
 from preprocessing import process_all_subjects
@@ -37,7 +41,7 @@ from segmentation import create_all_windows
 from data.dl_dataset import WESADDataset
 from models.student import STUDENT_REGISTRY
 from models.distillation import train_student_kd_loso
-from training.loso import SMOKE_FOLDS, SMOKE_EPOCHS
+from training.loso import SMOKE_FOLDS, SMOKE_EPOCHS, write_manifest
 from evaluation.reporter import plot_ablation
 
 ABLATION_CSV_FIELDS = [
@@ -74,6 +78,35 @@ def build_configs(sweep: str) -> list:
     return [(fixed_t, a) for a in alphas]  # sweep == 'alpha'
 
 
+def _hash_state_dict(state_dict: dict) -> str:
+    """Order-independent hash of a model's weights, for the identical-config check below."""
+    h = hashlib.sha256()
+    for key in sorted(state_dict.keys()):
+        h.update(key.encode())
+        h.update(state_dict[key].cpu().numpy().tobytes())
+    return h.hexdigest()[:16]
+
+
+def _weight_signature(model_name: str, run_tag: str, test_subjects: list) -> tuple:
+    """
+    Hash each fold's saved checkpoint weights for one configuration.
+
+    F1 on 15 windows saturates: two genuinely different models routinely
+    produce identical F1 to full precision, which is exactly what happened
+    in the smoke test (T=1,a=0.3 vs T=1,a=0.5 -- confirmed by hand to be
+    different weights). Comparing weight hashes instead of the metric is
+    the correct way to detect a real "the sweep isn't varying anything" bug.
+    """
+    hashes = []
+    for subject in test_subjects:
+        ckpt_path = MODELS_DIR / f"{model_name}_distilled_{run_tag}_loso_{subject}.pt"
+        if not ckpt_path.exists():
+            continue
+        ckpt = torch.load(ckpt_path, map_location='cpu', weights_only=True)
+        hashes.append(_hash_state_dict(ckpt['model_state']))
+    return tuple(hashes)
+
+
 def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None:
     """Write one configuration's aggregated results to the CSV immediately."""
     path = REPORTS_DIR / 'ablation_results.csv'
@@ -96,6 +129,7 @@ def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None
 
 def main():
     args = parse_args()
+    start_time = datetime.now(timezone.utc).isoformat()
     set_all_seeds(RANDOM_SEED)
     create_directories()
 
@@ -104,7 +138,9 @@ def main():
 
     configs = build_configs(args.sweep)
     if args.smoke:
-        configs = configs[:2]
+        # First and last of the grid, not two adjacent points -- exercises
+        # both the temperature and alpha axes instead of leaving T fixed.
+        configs = [configs[0], configs[-1]] if len(configs) > 1 else configs
     max_folds = SMOKE_FOLDS if args.smoke else args.folds
     epochs    = SMOKE_EPOCHS if args.smoke else None
 
@@ -121,8 +157,12 @@ def main():
     print("  Building dataset once, reused across all configurations...")
     dataset = WESADDataset(windowed)
 
+    all_subjects = sorted(windowed.keys())
+    folds_to_run = all_subjects[:max_folds] if max_folds else all_subjects
+
     # ── Sweep ──────────────────────────────────────────────────────────────────
-    grid_results = {}  # {(temperature, alpha): f1_mean}
+    grid_results = {}      # {(temperature, alpha): f1_mean}
+    weight_signatures = {}  # {(temperature, alpha): tuple of per-fold weight hashes}
 
     for temperature, alpha in configs:
         print_section_header(f"T={temperature}  alpha={alpha}")
@@ -138,6 +178,7 @@ def main():
 
         f1 = metrics['f1']['mean']
         grid_results[(temperature, alpha)] = f1
+        weight_signatures[(temperature, alpha)] = _weight_signature(model_name, run_tag, folds_to_run)
         print(f"    -> F1={f1:.4f}")
         append_ablation_row(temperature, alpha, metrics)
 
@@ -145,9 +186,15 @@ def main():
         print_section_header("DONE (no results)")
         return
 
-    if len(grid_results) > 1 and len(set(grid_results.values())) == 1:
-        print("\n  WARNING: all configurations produced the identical F1 score.")
-        print("  This indicates the sweep is still not varying hyperparameters -- stop and report.")
+    # F1 saturates on small fold sizes -- two genuinely different models can
+    # land on identical F1. The real "sweep isn't doing anything" signal is
+    # identical *weights* across configs, not identical F1.
+    if len(weight_signatures) > 1 and len(set(weight_signatures.values())) == 1:
+        print("\n  WARNING: all configurations produced IDENTICAL model weights.")
+        print("  This means the sweep is still not varying hyperparameters -- stop and report.")
+    elif len(grid_results) > 1 and len(set(grid_results.values())) == 1:
+        print("\n  Note: all configurations produced the same F1, but weight hashes differ")
+        print("  (metric saturation on this many folds/windows) -- not a bug.")
 
     print_section_header("GENERATING ABLATION PLOT")
     plot_ablation(
@@ -156,6 +203,11 @@ def main():
         alphas=DL_CONFIG['ablation_alphas'],
         model_name=model_name,
     )
+
+    write_manifest('ablation', start_time, extra={
+        'smoke': args.smoke, 'sweep': args.sweep, 'model': model_name,
+        'n_configs': len(grid_results),
+    })
 
     print_section_header("DONE")
 

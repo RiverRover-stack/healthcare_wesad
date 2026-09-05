@@ -8,6 +8,7 @@ Runs the full preprocessing pipeline, then trains the TeacherCNN
 under LOSO cross-validation. Results saved to outputs/reports/model_comparison.csv.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -21,7 +22,15 @@ from segmentation import create_all_windows
 from training.trainer import train_teacher_loso
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train the teacher CNN via nested LOSO')
+    parser.add_argument('--smoke', action='store_true',
+                        help='Run a tiny 2-fold/3-epoch smoke test instead of the full run')
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     print_section_header("TEACHER CNN TRAINING PIPELINE")
     set_all_seeds(RANDOM_SEED)
     create_directories()
@@ -30,7 +39,7 @@ def main():
     subjects = process_all_subjects(subjects)
     windowed = create_all_windows(subjects)
 
-    results = train_teacher_loso(windowed)
+    results = train_teacher_loso(windowed, smoke=args.smoke)
 
     print_section_header("DONE")
     if not results:

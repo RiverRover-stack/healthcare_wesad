@@ -24,6 +24,7 @@ Failure Modes:
 
 import numpy as np
 import random
+import torch
 from typing import Any, Dict
 
 
@@ -37,6 +38,7 @@ def set_all_seeds(seed: int) -> None:
     """
     random.seed(seed)
     np.random.seed(seed)
+    torch.manual_seed(seed)
 
 
 def validate_dict_structure(data: Dict[str, Any], required_keys: list) -> bool:

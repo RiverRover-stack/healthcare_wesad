@@ -1,26 +1,27 @@
 """
-Trainer: LOSO Training Loop for Teacher CNN
+Trainer: Nested LOSO Training Loop for Teacher CNN
 
 Responsibility:
-    Train the TeacherCNN using Leave-One-Subject-Out cross-validation.
+    Train the TeacherCNN using nested Leave-One-Subject-Out cross-validation:
+    each fold holds out one test subject and two inner validation subjects.
+    Model selection (best epoch, LR scheduling) is driven by the validation
+    fold only -- the test fold is scored exactly once, after selection.
     Uses WeightedRandomSampler to force balanced batches (fixes class collapse).
-    Saves best model per fold (by F1) and aggregates metrics.
 
 Inputs:
     windowed_data: Dict[str, WindowedData] from the preprocessing pipeline
 
 Outputs:
-    Aggregated LOSO metrics dict
+    Aggregated LOSO metrics dict (of the selected-checkpoint test scores)
     Per-fold model checkpoints in outputs/models/
+    Per-fold rows in outputs/reports/per_fold_results.csv
     Comparison CSV in outputs/reports/model_comparison.csv
 """
 
-import csv
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from torch.utils.data import DataLoader, Subset
 from typing import Dict
 from pathlib import Path
 
@@ -31,93 +32,35 @@ from config import RANDOM_SEED, MODELS_DIR, REPORTS_DIR, create_directories, DL_
 from data.dl_dataset import WESADDataset
 from models.teacher import create_teacher_cnn
 from segmentation.window_data import WindowedData
+from utils import set_all_seeds
+from training.loso import (
+    DEVICE, SMOKE_FOLDS, SMOKE_EPOCHS,
+    make_fold_split, make_balanced_sampler, compute_class_weights,
+    evaluate_model, loader_subject_ids, append_fold_record,
+)
+import csv
 
 # Training hyperparameters — sourced from config.DL_CONFIG (single source of truth)
 BATCH_SIZE   = DL_CONFIG['batch_size']
 EPOCHS       = DL_CONFIG['teacher_epochs']
 LR           = DL_CONFIG['lr']
 WEIGHT_DECAY = DL_CONFIG['weight_decay']
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def _make_balanced_sampler(labels: np.ndarray) -> WeightedRandomSampler:
+def train_teacher_loso(windowed_data: Dict[str, WindowedData], smoke: bool = False) -> Dict:
     """
-    Create a sampler that draws equal numbers of each class per epoch.
-    This is the primary fix for the class-collapse problem: instead of
-    letting 64% baseline windows dominate every batch, we oversample
-    stress windows so each batch is ~50/50.
+    Run nested LOSO cross-validation training for TeacherCNN.
+    Returns aggregated metrics (mean/std of the selected-checkpoint test scores).
     """
-    counts = np.bincount(labels, minlength=2).astype(float)
-    counts = np.where(counts == 0, 1.0, counts)
-    # Weight per sample = inverse class frequency
-    sample_weights = np.where(labels == 1,
-                               1.0 / counts[1],
-                               1.0 / counts[0])
-    return WeightedRandomSampler(
-        weights=sample_weights.tolist(),  # pass as Python list; PyTorch stores as float64 internally
-        num_samples=len(labels),
-        replacement=True,
-    )
-
-
-def _compute_class_weights(labels: np.ndarray) -> torch.Tensor:
-    """Inverse-frequency class weights for the loss function (secondary defence)."""
-    counts = np.bincount(labels, minlength=2).astype(float)
-    counts = np.where(counts == 0, 1.0, counts)
-    weights = counts.sum() / (2.0 * counts)
-    return torch.tensor(weights, dtype=torch.float32).to(DEVICE)
-
-
-def _eval_fold(model: nn.Module, loader: DataLoader) -> Dict[str, float]:
-    """Run inference on a DataLoader; return metrics dict."""
-    model.eval()
-    all_preds, all_probs, all_labels = [], [], []
-
-    with torch.no_grad():
-        for x, y, _ in loader:
-            x = x.to(DEVICE)
-            logits = model(x)
-            probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
-            preds = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-            all_probs.extend(probs)
-            all_labels.extend(y.cpu().numpy())
-
-    y_true = np.array(all_labels)
-    y_pred = np.array(all_preds)
-    y_prob = np.array(all_probs)
-
-    metrics = {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'precision': precision_score(y_true, y_pred, zero_division=0),
-        'recall': recall_score(y_true, y_pred, zero_division=0),
-        'f1': f1_score(y_true, y_pred, zero_division=0),
-    }
-    if len(np.unique(y_true)) > 1:
-        try:
-            metrics['roc_auc'] = roc_auc_score(y_true, y_prob)
-        except ValueError:
-            metrics['roc_auc'] = 0.0
-    else:
-        metrics['roc_auc'] = 0.0
-    # Cast to plain Python floats: sklearn returns numpy scalars, and those
-    # make the saved checkpoint unloadable under weights_only=True.
-    return {k: float(v) for k, v in metrics.items()}
-
-
-def train_teacher_loso(windowed_data: Dict[str, WindowedData]) -> Dict:
-    """
-    Run LOSO cross-validation training for TeacherCNN.
-    Returns aggregated metrics.
-    """
-    torch.manual_seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
     create_directories()
 
     all_subjects = sorted(windowed_data.keys())
+    n_epochs = SMOKE_EPOCHS if smoke else EPOCHS
+    folds_to_run = all_subjects[:SMOKE_FOLDS] if smoke else all_subjects
+
     print(f"\n{'='*60}")
-    print(f"  TEACHER CNN -- LOSO CROSS-VALIDATION")
-    print(f"  Device: {DEVICE}  |  Epochs: {EPOCHS}  |  LR: {LR}")
+    print(f"  TEACHER CNN -- NESTED LOSO CROSS-VALIDATION{'  [SMOKE]' if smoke else ''}")
+    print(f"  Device: {DEVICE}  |  Epochs: {n_epochs}  |  LR: {LR}")
     print(f"  Batch: {BATCH_SIZE}  |  WeightDecay: {WEIGHT_DECAY}")
     print(f"  Imbalance fix: WeightedRandomSampler + class-weighted loss")
     print(f"{'='*60}")
@@ -131,35 +74,39 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData]) -> Dict:
 
     fold_metrics = []
 
-    for fold_idx, test_subject in enumerate(all_subjects):
-        train_indices = np.where(subject_per_window != test_subject)[0].tolist()
-        test_indices = np.where(subject_per_window == test_subject)[0].tolist()
-
-        if len(test_indices) == 0:
+    for fold_idx, test_subject in enumerate(folds_to_run):
+        split = make_fold_split(fold_idx, test_subject, all_subjects,
+                                 subject_per_window, label_per_window)
+        if split is None:
             continue
 
-        test_labels = label_per_window[test_indices]
-        if len(np.unique(test_labels)) < 2:
-            print(f"  Fold {fold_idx+1:02d} [{test_subject}]: SKIP (single class in test)")
-            continue
+        seed = RANDOM_SEED + fold_idx
+        set_all_seeds(seed)
 
-        train_labels = label_per_window[train_indices]
+        train_labels = label_per_window[split.train_idx]
         n_stress = int(np.sum(train_labels == 1))
         n_base = int(np.sum(train_labels == 0))
 
-        # Balanced sampler — forces 50/50 class mix in every batch
-        sampler = _make_balanced_sampler(train_labels)
-        class_weights = _compute_class_weights(train_labels)
+        sampler = make_balanced_sampler(train_labels)
+        class_weights = compute_class_weights(train_labels)
 
         train_loader = DataLoader(
-            Subset(full_dataset, train_indices),
+            Subset(full_dataset, split.train_idx),
             batch_size=BATCH_SIZE,
             sampler=sampler,   # replaces shuffle=True
             num_workers=0,
         )
-        test_loader = DataLoader(
-            Subset(full_dataset, test_indices),
+        val_loader = DataLoader(
+            Subset(full_dataset, split.val_idx),
             batch_size=BATCH_SIZE, shuffle=False, num_workers=0,
+        )
+        test_loader = DataLoader(
+            Subset(full_dataset, split.test_idx),
+            batch_size=BATCH_SIZE, shuffle=False, num_workers=0,
+        )
+
+        assert loader_subject_ids(val_loader).isdisjoint(loader_subject_ids(test_loader)), (
+            f"Fold {fold_idx} [{test_subject}]: val/test subject leak"
         )
 
         model = create_teacher_cnn().to(DEVICE)
@@ -173,9 +120,12 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData]) -> Dict:
 
         best_f1 = -1.0
         best_state = None
+        best_epoch = 0
+        best_val_metrics = None
 
-        print(f"  Fold {fold_idx+1:02d} [{test_subject}] training ({EPOCHS} epochs)...")
-        for epoch in range(EPOCHS):
+        print(f"  Fold {fold_idx+1:02d} [{test_subject}] val={split.val_subjects} "
+              f"training ({n_epochs} epochs)...")
+        for epoch in range(n_epochs):
             model.train()
             epoch_loss = 0.0
             n_batches = 0
@@ -195,39 +145,76 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData]) -> Dict:
                 epoch_loss += loss.item()
                 n_batches += 1
 
-            val_metrics = _eval_fold(model, test_loader)
+            val_metrics = evaluate_model(model, val_loader)
             scheduler.step(val_metrics['f1'])
 
             if val_metrics['f1'] > best_f1:
                 best_f1 = val_metrics['f1']
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                best_epoch = epoch + 1
+                best_val_metrics = val_metrics
 
             # Print progress every 10 epochs
             if (epoch + 1) % 10 == 0 or epoch == 0:
                 avg_loss = epoch_loss / max(n_batches, 1)
                 lr_now = optimizer.param_groups[0]['lr']
-                print(f"    ep {epoch+1:02d}/{EPOCHS}  loss={avg_loss:.4f}"
+                print(f"    ep {epoch+1:02d}/{n_epochs}  loss={avg_loss:.4f}"
                       f"  val_F1={val_metrics['f1']:.3f}"
                       f"  val_Recall={val_metrics['recall']:.3f}"
                       f"  lr={lr_now:.2e}")
 
+        final_epoch_metrics = evaluate_model(model, test_loader)   # last-epoch weights FIRST
         model.load_state_dict(best_state)
-        final_metrics = _eval_fold(model, test_loader)
-        fold_metrics.append(final_metrics)
+        test_metrics = evaluate_model(model, test_loader)          # then the selected checkpoint
+        fold_metrics.append(test_metrics)
 
         ckpt_path = MODELS_DIR / f"teacher_loso_{test_subject}.pt"
         torch.save({
             'model_state': best_state,
             'subject': test_subject,
-            'metrics': final_metrics,
+            'mode': 'teacher',
+            'val_subjects': split.val_subjects,
+            'metrics': test_metrics,
+            'val_metrics': best_val_metrics,
+            'final_epoch_metrics': final_epoch_metrics,
+            'best_epoch': best_epoch,
+            'n_epochs': n_epochs,
+            'seed': seed,
         }, ckpt_path)
 
+        append_fold_record({
+            'model': 'Teacher', 'mode': 'teacher', 'run_tag': 'smoke' if smoke else '',
+            'fold_idx': fold_idx, 'test_subject': test_subject,
+            'val_subjects': '|'.join(split.val_subjects),
+            'n_train_windows': len(split.train_idx),
+            'n_val_windows': len(split.val_idx),
+            'n_test_windows': len(split.test_idx),
+            'n_train_baseline': n_base, 'n_train_stress': n_stress,
+            'best_epoch': best_epoch, 'n_epochs': n_epochs, 'seed': seed,
+            'val_accuracy': best_val_metrics['accuracy'],
+            'val_precision': best_val_metrics['precision'],
+            'val_recall': best_val_metrics['recall'],
+            'val_f1': best_val_metrics['f1'],
+            'val_roc_auc': best_val_metrics['roc_auc'],
+            'test_accuracy': test_metrics['accuracy'],
+            'test_precision': test_metrics['precision'],
+            'test_recall': test_metrics['recall'],
+            'test_f1': test_metrics['f1'],
+            'test_roc_auc': test_metrics['roc_auc'],
+            'final_epoch_accuracy': final_epoch_metrics['accuracy'],
+            'final_epoch_precision': final_epoch_metrics['precision'],
+            'final_epoch_recall': final_epoch_metrics['recall'],
+            'final_epoch_f1': final_epoch_metrics['f1'],
+            'final_epoch_roc_auc': final_epoch_metrics['roc_auc'],
+            'temperature': '', 'alpha': '',
+        })
+
         print(f"  Fold {fold_idx+1:02d} [{test_subject}]"
-              f" (train B={n_base}/S={n_stress}): "
-              f"Acc={final_metrics['accuracy']:.3f}  "
-              f"Recall={final_metrics['recall']:.3f}  "
-              f"F1={final_metrics['f1']:.3f}  "
-              f"AUC={final_metrics['roc_auc']:.3f}")
+              f" (train B={n_base}/S={n_stress})  best_ep={best_epoch}/{n_epochs}: "
+              f"valF1={best_val_metrics['f1']:.3f} | testF1={test_metrics['f1']:.3f}  "
+              f"Acc={test_metrics['accuracy']:.3f}  "
+              f"Recall={test_metrics['recall']:.3f}  "
+              f"AUC={test_metrics['roc_auc']:.3f}")
 
     if not fold_metrics:
         print("  ERROR: No folds completed.")
@@ -244,16 +231,22 @@ def train_teacher_loso(windowed_data: Dict[str, WindowedData]) -> Dict:
     for metric, vals in aggregated.items():
         print(f"  {metric:<12} {vals['mean']:>8.4f} {vals['std']:>8.4f}")
 
-    _save_comparison_csv(aggregated)
+    if not smoke:
+        _save_comparison_csv(aggregated)
     return aggregated
 
 
 def _save_comparison_csv(cnn_results: Dict) -> None:
-    """Write model comparison CSV with actual ML results + CNN results."""
+    """
+    Update model comparison CSV with baseline/classical/teacher rows.
+    Appends-and-dedupes by label instead of overwriting the file, so a
+    teacher run after students no longer wipes the student rows that
+    distillation.py's _append_to_comparison_csv already added.
+    """
     csv_path = REPORTS_DIR / "model_comparison.csv"
+    header = ["Model", "Params", "Accuracy", "Recall", "F1", "ROC-AUC"]
 
-    rows = [
-        ["Model", "Params", "Accuracy", "Recall", "F1", "ROC-AUC"],
+    new_rows = [
         ["Random Baseline",          "--",         "~0.50",          "0.358",             "0.364",             "--"],
         ["Majority Baseline",        "--",         "~0.67",          "0.000",             "0.000",             "--"],
         ["EDA Threshold",            "--",         "~0.60",          "0.866",             "0.792",             "--"],
@@ -268,9 +261,19 @@ def _save_comparison_csv(cnn_results: Dict) -> None:
             f"{cnn_results['roc_auc']['mean']:.3f} +/- {cnn_results['roc_auc']['std']:.3f}",
         ],
     ]
+    new_labels = {row[0] for row in new_rows}
+
+    existing_rows = []
+    if csv_path.exists():
+        with open(csv_path, 'r', newline='', encoding='utf-8') as f:
+            reader = list(csv.reader(f))
+        if reader:
+            existing_rows = [row for row in reader[1:] if row and row[0] not in new_labels]
 
     with open(csv_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerows(rows)
+        writer.writerow(header)
+        writer.writerows(existing_rows)
+        writer.writerows(new_rows)
 
     print(f"\n  Comparison table saved -> {csv_path}")

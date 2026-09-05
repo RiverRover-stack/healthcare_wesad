@@ -1,7 +1,4 @@
-from .trainer import train_teacher_loso
-
-# Import via sys.path to avoid relative-import issues when src/ is on sys.path
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from models.distillation import train_student_kd_loso
+"""Training package: nested-LOSO fold logic (loso.py), teacher (trainer.py)
+and student/KD (models.distillation) trainers. No re-exports here -- import
+submodules directly to avoid a circular import between trainer.py,
+models.distillation, and training.loso."""

@@ -71,6 +71,8 @@ def parse_args():
     parser.add_argument('--model', default=None, help='students: --model filter; ablation: student model (default MicroCNN)')
     parser.add_argument('--mode', default=None, help='students: --mode filter (standalone/distilled/both)')
     parser.add_argument('--sweep', default=None, help='ablation: --sweep (temperature/alpha/both)')
+    parser.add_argument('--nsamples', type=int, default=None,
+                        help='shap: GradientExplainer interpolation-sample count (default 200)')
     parser.add_argument('--no-wait', action='store_true', help='Push and return immediately, do not poll')
     return parser.parse_args()
 
@@ -106,6 +108,8 @@ def configure_kernel(phase: str, args) -> Path:
     elif phase == 'ablation':
         rewrite_constant(script, 'MODEL', args.model or 'MicroCNN', quoted=True)
         rewrite_constant(script, 'SWEEP', args.sweep or 'both', quoted=True)
+    elif phase == 'shap':
+        rewrite_constant(script, 'NSAMPLES', args.nsamples or 200, quoted=False)
 
     print(f'Configured {script} -> PINNED_SHA={sha[:8]} SMOKE={args.smoke}')
     return kernel_dir

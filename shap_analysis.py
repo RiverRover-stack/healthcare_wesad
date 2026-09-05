@@ -32,6 +32,7 @@ Outputs (saved to REPORTS_DIR):
 """
 
 import csv
+import os
 import sys
 import random
 from pathlib import Path
@@ -67,6 +68,13 @@ SAMPLE_RATE     = 64            # Hz
 WINDOW_SEC      = 60            # seconds
 DPI             = 300
 SEED            = 42
+
+# GradientExplainer's internal interpolation-sample count. Measured cost at
+# the default (~200): one fold's teacher-side shap_values() call alone took
+# 1047s on CPU -- ~4.4h for the teacher across all 15 folds. Overridable via
+# SHAP_NSAMPLES so a faster run can be compared against the full-cost one
+# without editing this file.
+NSAMPLES = int(os.environ.get('SHAP_NSAMPLES', '200'))
 
 # colour palette
 C_TEACHER = "#4C72B0"   # blue
@@ -215,7 +223,7 @@ def compute_shap_channel(model: torch.nn.Module,
     """
     model.eval()
     explainer   = shap.GradientExplainer(model, background)
-    shap_raw    = explainer.shap_values(test_x)
+    shap_raw    = explainer.shap_values(test_x, nsamples=NSAMPLES)
 
     sv_stress   = _extract_stress_shap(shap_raw, n_samples=len(test_x))
     importance  = np.mean(np.abs(sv_stress), axis=(0, 2))
@@ -519,7 +527,7 @@ def task4_per_class_shap(teacher, background, test_x, test_y):
 
     teacher.eval()
     explainer     = shap.GradientExplainer(teacher, background)
-    shap_raw      = explainer.shap_values(test_x)
+    shap_raw      = explainer.shap_values(test_x, nsamples=NSAMPLES)
     sv_stress_raw = _extract_stress_shap(shap_raw, n_samples=len(test_x))
 
     stress_mask   = test_y == 1
@@ -579,6 +587,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"  MODELS_DIR : {MODELS_DIR}")
     print(f"  REPORTS_DIR: {REPORTS_DIR}")
+    print(f"  N_BG={N_BG}  N_TEST={N_TEST}  NSAMPLES={NSAMPLES}")
 
     print("\n[Data] Loading subjects and running pipeline ...")
     subjects  = load_all_subjects()

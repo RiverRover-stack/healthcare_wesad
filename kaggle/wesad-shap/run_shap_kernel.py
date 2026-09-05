@@ -8,7 +8,7 @@ bridged teacher checkpoints and the 90 student checkpoints, so mounting it
 alone is enough -- no need to also mount the teacher kernel separately.
 
 Not meant to be edited by hand for each run -- kaggle_runner.py rewrites
-PINNED_SHA below before every `kaggle kernels push`.
+PINNED_SHA and NSAMPLES below before every `kaggle kernels push`.
 """
 
 import glob
@@ -18,7 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-PINNED_SHA = "0000000000000000000000000000000000000000"  # rewritten by kaggle_runner.py
+PINNED_SHA = "06629ba73f078425ebcc3302609fda77539467f9"
+NSAMPLES = 200  # GradientExplainer's interpolation-sample count; see shap_analysis.py
 
 REPO_URL = "https://github.com/RiverRover-stack/healthcare_wesad.git"
 REPO_DIR = "/kaggle/working/healthcare_wesad"
@@ -82,8 +83,10 @@ def bridge_checkpoints(models_dir) -> int:
 def main() -> None:
     os.environ['WESAD_DATA_DIR'] = detect_data_root()
     os.environ['WESAD_OUTPUT_DIR'] = '/kaggle/working/outputs'
+    os.environ['SHAP_NSAMPLES'] = str(NSAMPLES)
     print('WESAD_DATA_DIR  :', os.environ['WESAD_DATA_DIR'])
     print('WESAD_OUTPUT_DIR:', os.environ['WESAD_OUTPUT_DIR'])
+    print('SHAP_NSAMPLES   :', os.environ['SHAP_NSAMPLES'])
 
     clone_and_checkout()
     os.chdir(REPO_DIR)
@@ -109,6 +112,7 @@ def main() -> None:
     kaggle_meta = {
         'kernel_slug': KERNEL_SLUG, 'pinned_sha': PINNED_SHA,
         'gpu_name': gpu_name, 'n_checkpoints_bridged': n_ckpts,
+        'nsamples': NSAMPLES,
     }
     with open('/kaggle/working/outputs/kaggle_meta.json', 'w', encoding='utf-8') as f:
         json.dump(kaggle_meta, f, indent=2)

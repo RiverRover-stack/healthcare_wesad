@@ -34,11 +34,13 @@ from pathlib import Path
 _KAGGLE_ENV = {**os.environ, 'PYTHONIOENCODING': 'utf-8'}
 
 KERNEL_DIRS = {
+    'main': Path('kaggle/wesad-main'),
     'teacher': Path('kaggle/wesad-teacher'),
     'students': Path('kaggle/wesad-students'),
     'ablation': Path('kaggle/wesad-ablation'),
 }
 KERNEL_SCRIPTS = {
+    'main': 'run_main_kernel.py',
     'teacher': 'run_teacher_kernel.py',
     'students': 'run_students_kernel.py',
     'ablation': 'run_ablation_kernel.py',
@@ -48,6 +50,7 @@ KERNEL_SLUGS = {
     # kernel-metadata.json, when they'd otherwise disagree -- title "WESAD
     # Teacher (script)" became "wesad-teacher-script", not "wesad-teacher".
     # kernel-metadata.json's "id" fields were updated to match this reality.
+    'main': 'euphora/wesad-main-script',
     'teacher': 'euphora/wesad-teacher-script',
     'students': 'euphora/wesad-students-script',
     'ablation': 'euphora/wesad-ablation-script',
@@ -91,7 +94,8 @@ def configure_kernel(phase: str, args) -> Path:
     sha = args.sha or current_git_sha()
 
     rewrite_constant(script, 'PINNED_SHA', sha, quoted=True)
-    rewrite_constant(script, 'SMOKE', args.smoke, quoted=False)
+    if phase != 'main':
+        rewrite_constant(script, 'SMOKE', args.smoke, quoted=False)
 
     if phase == 'students':
         rewrite_constant(script, 'MODEL_FILTER', args.model or 'all', quoted=True)

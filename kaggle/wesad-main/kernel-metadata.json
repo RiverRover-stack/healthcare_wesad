@@ -1,0 +1,14 @@
+{
+  "id": "euphora/wesad-main-script",
+  "title": "WESAD Main Classical Pipeline (script)",
+  "code_file": "run_main_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["orvile/wesad-wearable-stress-affect-detection-dataset"],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": []
+}

@@ -18,20 +18,21 @@ Two training modes (run both for the ablation comparison in the paper):
     'standalone' -- student trained directly on hard labels, no teacher
     'distilled'  -- student trained with KD loss (soft teacher targets)
 
+Model selection uses nested LOSO: each fold holds out one test subject and
+two inner validation subjects; the validation fold drives LR scheduling and
+best-checkpoint selection, and the test fold is scored exactly once after
+selection (see training.loso for the fold-splitting logic).
+
 Usage:
     from src.models.distillation import train_student_kd_loso
     results = train_student_kd_loso(windowed_data, MicroCNN, 'MicroCNN', mode='distilled')
 """
 
-import csv
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-)
+from torch.utils.data import DataLoader, Subset
 from typing import Dict, Type
 from pathlib import Path
 
@@ -42,15 +43,19 @@ from config import RANDOM_SEED, MODELS_DIR, REPORTS_DIR, create_directories, DL_
 from data.dl_dataset import WESADDataset
 from models.teacher import create_teacher_cnn
 from segmentation.window_data import WindowedData
+from utils import set_all_seeds
+from training.loso import (
+    DEVICE,
+    make_fold_split, make_balanced_sampler, compute_class_weights,
+    evaluate_model, loader_subject_ids, append_fold_record,
+)
+import csv
 
 # ── Hyperparameters — sourced from config.DL_CONFIG ──────────────────────────
-KD_TEMPERATURE = DL_CONFIG['kd_temperature']
-KD_ALPHA       = DL_CONFIG['kd_alpha']
-BATCH_SIZE     = DL_CONFIG['batch_size']
-EPOCHS         = DL_CONFIG['student_epochs']
-LR             = DL_CONFIG['lr']
-WEIGHT_DECAY   = DL_CONFIG['weight_decay']
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+BATCH_SIZE   = DL_CONFIG['batch_size']
+EPOCHS       = DL_CONFIG['student_epochs']
+LR           = DL_CONFIG['lr']
+WEIGHT_DECAY = DL_CONFIG['weight_decay']
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,8 +76,7 @@ class KDLoss(nn.Module):
     (otherwise alpha effectively becomes much smaller than intended).
     """
 
-    def __init__(self, temperature: float = KD_TEMPERATURE,
-                 alpha: float = KD_ALPHA,
+    def __init__(self, temperature: float, alpha: float,
                  class_weights: torch.Tensor = None):
         super().__init__()
         self.T = temperature
@@ -104,63 +108,6 @@ class KDLoss(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Shared helpers (mirrors trainer.py)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _make_balanced_sampler(labels: np.ndarray) -> WeightedRandomSampler:
-    counts = np.bincount(labels, minlength=2).astype(float)
-    counts = np.where(counts == 0, 1.0, counts)
-    sample_weights = np.where(labels == 1, 1.0 / counts[1], 1.0 / counts[0])
-    return WeightedRandomSampler(
-        weights=sample_weights.tolist(),
-        num_samples=len(labels),
-        replacement=True,
-    )
-
-
-def _compute_class_weights(labels: np.ndarray) -> torch.Tensor:
-    counts = np.bincount(labels, minlength=2).astype(float)
-    counts = np.where(counts == 0, 1.0, counts)
-    weights = counts.sum() / (2.0 * counts)
-    return torch.tensor(weights, dtype=torch.float32).to(DEVICE)
-
-
-def _eval_fold(model: nn.Module, loader: DataLoader) -> Dict[str, float]:
-    model.eval()
-    all_preds, all_probs, all_labels = [], [], []
-    with torch.no_grad():
-        for x, y, _ in loader:
-            x = x.to(DEVICE)
-            logits = model(x)
-            probs  = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
-            preds  = logits.argmax(dim=1).cpu().numpy()
-            all_preds.extend(preds)
-            all_probs.extend(probs)
-            all_labels.extend(y.cpu().numpy())
-
-    y_true = np.array(all_labels)
-    y_pred = np.array(all_preds)
-    y_prob = np.array(all_probs)
-
-    metrics = {
-        'accuracy':  accuracy_score(y_true, y_pred),
-        'precision': precision_score(y_true, y_pred, zero_division=0),
-        'recall':    recall_score(y_true, y_pred, zero_division=0),
-        'f1':        f1_score(y_true, y_pred, zero_division=0),
-    }
-    if len(np.unique(y_true)) > 1:
-        try:
-            metrics['roc_auc'] = roc_auc_score(y_true, y_prob)
-        except ValueError:
-            metrics['roc_auc'] = 0.0
-    else:
-        metrics['roc_auc'] = 0.0
-    # Cast to plain Python floats: sklearn returns numpy scalars, and those
-    # make the saved checkpoint unloadable under weights_only=True.
-    return {k: float(v) for k, v in metrics.items()}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Main training function
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -169,9 +116,16 @@ def train_student_kd_loso(
     student_class: Type[nn.Module],
     model_name: str,
     mode: str = 'distilled',
+    *,
+    dataset: WESADDataset = None,
+    temperature: float = None,
+    alpha: float = None,
+    epochs: int = None,
+    max_folds: int = None,
+    run_tag: str = None,
 ) -> Dict:
     """
-    LOSO cross-validation for a student model.
+    Nested LOSO cross-validation for a student model.
 
     Args:
         windowed_data:  Output of the segmentation pipeline (same as teacher trainer).
@@ -180,32 +134,50 @@ def train_student_kd_loso(
         model_name:     Short name for logging and CSV (e.g. 'MicroCNN').
         mode:           'distilled'   -- KD loss (teacher soft targets + hard labels)
                         'standalone'  -- CE loss only (for ablation: does KD actually help?)
+        dataset:        Pre-built WESADDataset to reuse instead of rebuilding one from
+                        windowed_data (lets callers share one dataset across many runs).
+        temperature:    KD temperature override (default: DL_CONFIG['kd_temperature']).
+        alpha:          KD alpha override (default: DL_CONFIG['kd_alpha']).
+        epochs:         Epoch count override (default: DL_CONFIG['student_epochs']).
+        max_folds:      Only run the first N folds (smoke tests / quick checks).
+        run_tag:        Distinguishes checkpoint filenames for sweep configs
+                        (e.g. 'T4_a0.7') and, when set, suppresses the
+                        model_comparison.csv append -- ablation configs must
+                        not pollute the headline model comparison table.
 
     Returns:
         Dict of aggregated metrics: {metric: {'mean': float, 'std': float}}
 
     Side effects:
-        - Saves per-fold checkpoints to outputs/models/{model_name}_{mode}_loso_{subject}.pt
-        - Appends results row to outputs/reports/model_comparison.csv
+        - Saves per-fold checkpoints to outputs/models/{model_name}_{mode}[_{run_tag}]_loso_{subject}.pt
+        - Appends a row per fold to outputs/reports/per_fold_results.csv
+        - Appends results row to outputs/reports/model_comparison.csv (unless run_tag is set)
     """
     if mode not in ('distilled', 'standalone'):
         raise ValueError(f"mode must be 'distilled' or 'standalone', got '{mode}'")
 
-    torch.manual_seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
+    temperature = temperature if temperature is not None else DL_CONFIG['kd_temperature']
+    alpha       = alpha       if alpha       is not None else DL_CONFIG['kd_alpha']
+    n_epochs    = epochs      if epochs      is not None else EPOCHS
+
     create_directories()
 
     all_subjects = sorted(windowed_data.keys())
+    folds_to_run = all_subjects[:max_folds] if max_folds else all_subjects
 
     print(f"\n{'='*60}")
-    print(f"  STUDENT: {model_name} [{mode.upper()}] -- LOSO")
-    print(f"  Device: {DEVICE}  |  Epochs: {EPOCHS}  |  LR: {LR}")
+    print(f"  STUDENT: {model_name} [{mode.upper()}] -- NESTED LOSO"
+          f"{f'  [run_tag={run_tag}]' if run_tag else ''}")
+    print(f"  Device: {DEVICE}  |  Epochs: {n_epochs}  |  LR: {LR}")
     if mode == 'distilled':
-        print(f"  KD: T={KD_TEMPERATURE}, alpha={KD_ALPHA}")
+        print(f"  KD: T={temperature}, alpha={alpha}")
     print(f"{'='*60}")
 
-    print("  Building dataset (reusing downsampled signals)...")
-    full_dataset = WESADDataset(windowed_data)
+    if dataset is not None:
+        full_dataset = dataset
+    else:
+        print("  Building dataset (reusing downsampled signals)...")
+        full_dataset = WESADDataset(windowed_data)
     print(f"  Total windows: {len(full_dataset)}")
 
     subject_per_window = np.array([s   for _, _, s in full_dataset.samples])
@@ -213,32 +185,37 @@ def train_student_kd_loso(
 
     fold_metrics = []
 
-    for fold_idx, test_subject in enumerate(all_subjects):
-        train_indices = np.where(subject_per_window != test_subject)[0].tolist()
-        test_indices  = np.where(subject_per_window == test_subject)[0].tolist()
-
-        if len(test_indices) == 0:
+    for fold_idx, test_subject in enumerate(folds_to_run):
+        split = make_fold_split(fold_idx, test_subject, all_subjects,
+                                 subject_per_window, label_per_window)
+        if split is None:
             continue
 
-        test_labels = label_per_window[test_indices]
-        if len(np.unique(test_labels)) < 2:
-            print(f"  Fold {fold_idx+1:02d} [{test_subject}]: SKIP (single class in test)")
-            continue
+        seed = RANDOM_SEED + fold_idx
+        set_all_seeds(seed)
 
-        train_labels = label_per_window[train_indices]
+        train_labels = label_per_window[split.train_idx]
         n_stress = int(np.sum(train_labels == 1))
         n_base   = int(np.sum(train_labels == 0))
 
-        sampler       = _make_balanced_sampler(train_labels)
-        class_weights = _compute_class_weights(train_labels)
+        sampler       = make_balanced_sampler(train_labels)
+        class_weights = compute_class_weights(train_labels)
 
         train_loader = DataLoader(
-            Subset(full_dataset, train_indices),
+            Subset(full_dataset, split.train_idx),
             batch_size=BATCH_SIZE, sampler=sampler, num_workers=0,
         )
-        test_loader = DataLoader(
-            Subset(full_dataset, test_indices),
+        val_loader = DataLoader(
+            Subset(full_dataset, split.val_idx),
             batch_size=BATCH_SIZE, shuffle=False, num_workers=0,
+        )
+        test_loader = DataLoader(
+            Subset(full_dataset, split.test_idx),
+            batch_size=BATCH_SIZE, shuffle=False, num_workers=0,
+        )
+
+        assert loader_subject_ids(val_loader).isdisjoint(loader_subject_ids(test_loader)), (
+            f"Fold {fold_idx} [{test_subject}]: val/test subject leak"
         )
 
         # ── Load frozen teacher (distilled mode only) ─────────────────────────
@@ -251,9 +228,10 @@ def train_student_kd_loso(
                 print("  Run train_teacher.py first to generate teacher checkpoints.")
                 continue
             teacher = create_teacher_cnn().to(DEVICE)
-            # weights_only=False: these checkpoints also carry a 'metrics' dict
-            # containing a numpy float64 (roc_auc), which the weights_only=True
-            # unpickler rejects on torch >= 2.6. Our own artifact, so this is safe.
+            # weights_only=False: these checkpoints carry val_subjects/metrics
+            # dicts alongside the tensors. Our own artifact, so this is safe;
+            # a future pass can move this to weights_only=True once every
+            # checkpoint in circulation was written by the current format.
             ckpt = torch.load(ckpt_path, map_location=DEVICE, weights_only=False)
             teacher.load_state_dict(ckpt['model_state'])
             teacher.freeze()  # sets eval() + requires_grad=False
@@ -269,20 +247,24 @@ def train_student_kd_loso(
 
         if mode == 'distilled':
             criterion = KDLoss(
-                temperature=KD_TEMPERATURE,
-                alpha=KD_ALPHA,
+                temperature=temperature,
+                alpha=alpha,
                 class_weights=class_weights,
             )
+            if fold_idx == 0:
+                print(f"  [fold 0 guard] criterion.T={criterion.T}  criterion.alpha={criterion.alpha}")
         else:
             criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-        best_f1    = -1.0
-        best_state = None
+        best_f1        = -1.0
+        best_state     = None
+        best_epoch     = 0
+        best_val_metrics = None
 
-        print(f"  Fold {fold_idx+1:02d} [{test_subject}]"
+        print(f"  Fold {fold_idx+1:02d} [{test_subject}] val={split.val_subjects}"
               f" (train B={n_base}/S={n_stress}) ...")
 
-        for epoch in range(EPOCHS):
+        for epoch in range(n_epochs):
             student.train()
             epoch_loss = 0.0
             n_batches  = 0
@@ -308,38 +290,76 @@ def train_student_kd_loso(
                 epoch_loss += loss.item()
                 n_batches  += 1
 
-            val_metrics = _eval_fold(student, test_loader)
+            val_metrics = evaluate_model(student, val_loader)
             scheduler.step(val_metrics['f1'])
 
             if val_metrics['f1'] > best_f1:
-                best_f1    = val_metrics['f1']
-                best_state = {k: v.cpu().clone() for k, v in student.state_dict().items()}
+                best_f1        = val_metrics['f1']
+                best_state     = {k: v.cpu().clone() for k, v in student.state_dict().items()}
+                best_epoch     = epoch + 1
+                best_val_metrics = val_metrics
 
             if (epoch + 1) % 10 == 0 or epoch == 0:
                 avg_loss = epoch_loss / max(n_batches, 1)
                 lr_now   = optimizer.param_groups[0]['lr']
-                print(f"    ep {epoch+1:02d}/{EPOCHS}  loss={avg_loss:.4f}"
-                      f"  F1={val_metrics['f1']:.3f}"
-                      f"  Recall={val_metrics['recall']:.3f}"
+                print(f"    ep {epoch+1:02d}/{n_epochs}  loss={avg_loss:.4f}"
+                      f"  val_F1={val_metrics['f1']:.3f}"
+                      f"  val_Recall={val_metrics['recall']:.3f}"
                       f"  lr={lr_now:.2e}")
 
+        final_epoch_metrics = evaluate_model(student, test_loader)  # last-epoch weights FIRST
         student.load_state_dict(best_state)
-        final_metrics = _eval_fold(student, test_loader)
-        fold_metrics.append(final_metrics)
+        test_metrics = evaluate_model(student, test_loader)         # then the selected checkpoint
+        fold_metrics.append(test_metrics)
 
-        ckpt_out = MODELS_DIR / f"{model_name}_{mode}_loso_{test_subject}.pt"
+        suffix = f"_{run_tag}" if run_tag else ""
+        ckpt_out = MODELS_DIR / f"{model_name}_{mode}{suffix}_loso_{test_subject}.pt"
         torch.save({
             'model_state': best_state,
             'subject':     test_subject,
             'mode':        mode,
-            'metrics':     final_metrics,
+            'val_subjects': split.val_subjects,
+            'metrics':      test_metrics,
+            'val_metrics':  best_val_metrics,
+            'final_epoch_metrics': final_epoch_metrics,
+            'best_epoch':   best_epoch,
+            'n_epochs':     n_epochs,
+            'seed':         seed,
         }, ckpt_out)
 
-        print(f"  Fold {fold_idx+1:02d} [{test_subject}]:"
-              f"  Acc={final_metrics['accuracy']:.3f}"
-              f"  Recall={final_metrics['recall']:.3f}"
-              f"  F1={final_metrics['f1']:.3f}"
-              f"  AUC={final_metrics['roc_auc']:.3f}")
+        append_fold_record({
+            'model': model_name, 'mode': mode, 'run_tag': run_tag or '',
+            'fold_idx': fold_idx, 'test_subject': test_subject,
+            'val_subjects': '|'.join(split.val_subjects),
+            'n_train_windows': len(split.train_idx),
+            'n_val_windows': len(split.val_idx),
+            'n_test_windows': len(split.test_idx),
+            'n_train_baseline': n_base, 'n_train_stress': n_stress,
+            'best_epoch': best_epoch, 'n_epochs': n_epochs, 'seed': seed,
+            'val_accuracy': best_val_metrics['accuracy'],
+            'val_precision': best_val_metrics['precision'],
+            'val_recall': best_val_metrics['recall'],
+            'val_f1': best_val_metrics['f1'],
+            'val_roc_auc': best_val_metrics['roc_auc'],
+            'test_accuracy': test_metrics['accuracy'],
+            'test_precision': test_metrics['precision'],
+            'test_recall': test_metrics['recall'],
+            'test_f1': test_metrics['f1'],
+            'test_roc_auc': test_metrics['roc_auc'],
+            'final_epoch_accuracy': final_epoch_metrics['accuracy'],
+            'final_epoch_precision': final_epoch_metrics['precision'],
+            'final_epoch_recall': final_epoch_metrics['recall'],
+            'final_epoch_f1': final_epoch_metrics['f1'],
+            'final_epoch_roc_auc': final_epoch_metrics['roc_auc'],
+            'temperature': temperature if mode == 'distilled' else '',
+            'alpha': alpha if mode == 'distilled' else '',
+        })
+
+        print(f"  Fold {fold_idx+1:02d} [{test_subject}]  best_ep={best_epoch}/{n_epochs}:"
+              f"  valF1={best_val_metrics['f1']:.3f} | testF1={test_metrics['f1']:.3f}"
+              f"  Acc={test_metrics['accuracy']:.3f}"
+              f"  Recall={test_metrics['recall']:.3f}"
+              f"  AUC={test_metrics['roc_auc']:.3f}")
 
     if not fold_metrics:
         print("  ERROR: No folds completed.")
@@ -357,7 +377,8 @@ def train_student_kd_loso(
     for metric, vals in aggregated.items():
         print(f"  {metric:<12} {vals['mean']:>8.4f} {vals['std']:>8.4f}")
 
-    _append_to_comparison_csv(model_name, mode, student_class, aggregated)
+    if run_tag is None:
+        _append_to_comparison_csv(model_name, mode, student_class, aggregated)
     return aggregated
 
 

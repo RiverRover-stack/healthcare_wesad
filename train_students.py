@@ -27,8 +27,10 @@ from utils import set_all_seeds, print_section_header
 from data import load_all_subjects
 from preprocessing import process_all_subjects
 from segmentation import create_all_windows
+from data.dl_dataset import WESADDataset
 from models.student import STUDENT_REGISTRY
 from models.distillation import train_student_kd_loso
+from training.loso import SMOKE_FOLDS, SMOKE_EPOCHS
 from evaluation.efficiency import get_efficiency_report, print_efficiency_table
 from evaluation.results import save_latex_tables
 
@@ -41,6 +43,8 @@ def parse_args():
                         default='both', help='Training mode (default: both)')
     parser.add_argument('--skip-efficiency', action='store_true',
                         help='Skip efficiency benchmarking after training')
+    parser.add_argument('--smoke', action='store_true',
+                        help='Run a tiny 2-fold/3-epoch smoke test instead of the full run')
     return parser.parse_args()
 
 
@@ -72,13 +76,21 @@ def main():
     subjects = process_all_subjects(subjects)
     windowed = create_all_windows(subjects)
 
+    print("  Building dataset (reused across all training runs)...")
+    dataset = WESADDataset(windowed)
+
+    kwargs = {}
+    if args.smoke:
+        kwargs = {'epochs': SMOKE_EPOCHS, 'max_folds': SMOKE_FOLDS}
+
     # ── Training loop ──────────────────────────────────────────────────────────
     all_results = {}   # {(model_name, mode): aggregated_metrics}
 
     for model_name, model_cls in models_to_run:
         for mode in modes_to_run:
             print_section_header(f"{model_name} [{mode.upper()}]")
-            results = train_student_kd_loso(windowed, model_cls, model_name, mode=mode)
+            results = train_student_kd_loso(windowed, model_cls, model_name, mode=mode,
+                                             dataset=dataset, **kwargs)
             if results:
                 all_results[(model_name, mode)] = results
 

@@ -14,6 +14,12 @@ Usage:
     python run_ablation.py --smoke               # 2 configs x 2 folds x 3 epochs
     python run_ablation.py --folds 5             # limit every config to 5 LOSO folds
 
+Resuming: by default, any (temperature, alpha) configuration already present
+in this output dir's ablation_results.csv is skipped -- a run killed at
+config 12/16 and restarted into the same WESAD_OUTPUT_DIR picks up at 13,
+not from scratch. Pass --force to ignore the existing CSV and rerun
+everything (e.g. after a code change that should invalidate old results).
+
 Prerequisite:
     Teacher checkpoints must exist:  python train_teacher.py
 
@@ -43,6 +49,7 @@ from models.student import STUDENT_REGISTRY
 from models.distillation import train_student_kd_loso
 from training.loso import SMOKE_FOLDS, SMOKE_EPOCHS, write_manifest
 from evaluation.reporter import plot_ablation
+from evaluation.results import read_ablation_grid
 
 ABLATION_CSV_FIELDS = [
     'temperature', 'alpha', 'f1_mean', 'f1_std', 'accuracy_mean', 'recall_mean', 'auc_mean',
@@ -61,6 +68,9 @@ def parse_args():
                         help='Run only the first 2 configs, 2 folds, 3 epochs each')
     parser.add_argument('--folds', type=int, default=None,
                         help='Limit every configuration to the first N LOSO folds (default: all 15)')
+    parser.add_argument('--force', action='store_true',
+                        help='Ignore any existing ablation_results.csv in this output dir '
+                             'and rerun every requested configuration from scratch')
     return parser.parse_args()
 
 
@@ -107,21 +117,23 @@ def _weight_signature(model_name: str, run_tag: str, test_subjects: list) -> tup
     return tuple(hashes)
 
 
-def _reset_ablation_csv() -> None:
-    """
-    Start every ablation run with a fresh CSV. WESAD_OUTPUT_DIR is already
-    uniquely timestamped per run, so there is no reason to accumulate rows
-    across separate invocations -- appending across runs let a restart or
-    partial re-run leave duplicate/stale rows that disagree with
-    per_fold_results.csv about which configurations were actually run.
-    """
+def _write_fresh_ablation_csv() -> None:
+    """Wipe ablation_results.csv down to just the header (--force path only)."""
     path = REPORTS_DIR / 'ablation_results.csv'
     with open(path, 'w', newline='', encoding='utf-8') as f:
         csv.writer(f).writerow(ABLATION_CSV_FIELDS)
 
 
+def _ensure_ablation_csv_header() -> None:
+    """Create ablation_results.csv with just a header if it doesn't exist yet -- does
+    not touch an existing file, so already-completed configurations survive a resume."""
+    path = REPORTS_DIR / 'ablation_results.csv'
+    if not path.exists():
+        _write_fresh_ablation_csv()
+
+
 def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None:
-    """Append one configuration's aggregated results to the (already-reset) CSV."""
+    """Append one configuration's aggregated results to the CSV."""
     path = REPORTS_DIR / 'ablation_results.csv'
     row = {
         'temperature': temperature,
@@ -134,18 +146,6 @@ def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None
     }
     with open(path, 'a', newline='', encoding='utf-8') as f:
         csv.DictWriter(f, fieldnames=ABLATION_CSV_FIELDS).writerow(row)
-
-
-def _read_ablation_csv() -> dict:
-    """Read ablation_results.csv back into {(temperature, alpha): f1_mean}."""
-    path = REPORTS_DIR / 'ablation_results.csv'
-    grid = {}
-    if not path.exists():
-        return grid
-    with open(path, encoding='utf-8') as f:
-        for row in csv.DictReader(f):
-            grid[(float(row['temperature']), float(row['alpha']))] = float(row['f1_mean'])
-    return grid
 
 
 def main():
@@ -165,29 +165,49 @@ def main():
     max_folds = SMOKE_FOLDS if args.smoke else args.folds
     epochs    = SMOKE_EPOCHS if args.smoke else None
 
+    # ── Resume support: skip configs already in this dir's ablation_results.csv ──
+    if args.force:
+        _write_fresh_ablation_csv()
+        existing_grid = {}
+    else:
+        _ensure_ablation_csv_header()
+        existing_grid = read_ablation_grid()
+
+    already_done = [c for c in configs if c in existing_grid]
+    configs_to_run = [c for c in configs if c not in existing_grid]
+    if already_done:
+        print(f"  Resuming: {len(already_done)} configuration(s) already in "
+              f"ablation_results.csv, skipping: {already_done}")
+
     print_section_header(f"KD ABLATION STUDY — {model_name}{'  [SMOKE]' if args.smoke else ''}")
-    print(f"  Sweep: {args.sweep}  ({len(configs)} configurations)")
-    print(f"  Configs: {configs}")
+    print(f"  Sweep: {args.sweep}  ({len(configs_to_run)} configuration(s) to run"
+          f" of {len(configs)} requested)")
+    print(f"  Configs to run: {configs_to_run}")
 
-    # ── Load data ──────────────────────────────────────────────────────────────
-    print_section_header("LOADING DATA")
-    subjects = load_all_subjects()
-    subjects = process_all_subjects(subjects)
-    windowed = create_all_windows(subjects)
+    if not configs_to_run and not existing_grid:
+        print_section_header("DONE (no results)")
+        return
 
-    print("  Building dataset once, reused across all configurations...")
-    dataset = WESADDataset(windowed)
+    # ── Load data (skipped entirely if every requested config is already done) ──
+    dataset = None
+    windowed = {}
+    if configs_to_run:
+        print_section_header("LOADING DATA")
+        subjects = load_all_subjects()
+        subjects = process_all_subjects(subjects)
+        windowed = create_all_windows(subjects)
+
+        print("  Building dataset once, reused across all configurations...")
+        dataset = WESADDataset(windowed)
 
     all_subjects = sorted(windowed.keys())
     folds_to_run = all_subjects[:max_folds] if max_folds else all_subjects
 
-    _reset_ablation_csv()
-
     # ── Sweep ──────────────────────────────────────────────────────────────────
-    grid_results = {}      # {(temperature, alpha): f1_mean}
+    grid_results = {}      # {(temperature, alpha): f1_mean} -- this invocation only
     weight_signatures = {}  # {(temperature, alpha): tuple of per-fold weight hashes}
 
-    for temperature, alpha in configs:
+    for temperature, alpha in configs_to_run:
         print_section_header(f"T={temperature}  alpha={alpha}")
         run_tag = f"T{temperature}_a{alpha}"
         metrics = train_student_kd_loso(
@@ -205,13 +225,9 @@ def main():
         print(f"    -> F1={f1:.4f}")
         append_ablation_row(temperature, alpha, metrics)
 
-    if not grid_results:
-        print_section_header("DONE (no results)")
-        return
-
     # F1 saturates on small fold sizes -- two genuinely different models can
     # land on identical F1. The real "sweep isn't doing anything" signal is
-    # identical *weights* across configs, not identical F1.
+    # identical *weights* across configs run in this invocation, not identical F1.
     if len(weight_signatures) > 1 and len(set(weight_signatures.values())) == 1:
         print("\n  WARNING: all configurations produced IDENTICAL model weights.")
         print("  This means the sweep is still not varying hyperparameters -- stop and report.")
@@ -221,9 +237,14 @@ def main():
 
     print_section_header("GENERATING ABLATION PLOT")
     # Read back from disk rather than plotting grid_results directly -- the
-    # figure must reflect exactly what's in the CSV, or the two can drift
-    # apart (the original failure mode: figures and CSVs from different runs).
-    csv_grid = _read_ablation_csv()
+    # figure must reflect exactly what's in the CSV (this run's new rows plus
+    # any resumed-from-existing ones), or the two can drift apart (the
+    # original failure mode: figures and CSVs from different runs).
+    csv_grid = read_ablation_grid()
+    if not csv_grid:
+        print_section_header("DONE (no results)")
+        return
+
     plot_ablation(
         csv_grid,
         temperatures=DL_CONFIG['ablation_temperatures'],
@@ -233,7 +254,8 @@ def main():
 
     write_manifest('ablation', start_time, extra={
         'smoke': args.smoke, 'sweep': args.sweep, 'model': model_name,
-        'n_configs': len(grid_results),
+        'n_configs_run_this_invocation': len(grid_results),
+        'n_configs_total_in_csv': len(csv_grid),
     })
 
     print_section_header("DONE")

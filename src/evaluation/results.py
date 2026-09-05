@@ -94,6 +94,28 @@ def load_results(csv_path: Optional[Path] = None) -> Dict[str, Dict]:
     return results
 
 
+def read_ablation_grid(csv_path: Optional[Path] = None) -> Dict[Tuple[float, float], float]:
+    """
+    Read ablation_results.csv into {(temperature, alpha): f1_mean}.
+
+    Single implementation shared by run_ablation.py (to plot and to detect
+    already-completed configurations for --resume) and generate_report.py
+    (to regenerate fig7 without re-running the sweep) -- two readers of one
+    file will otherwise drift apart on a column rename or a parsing edge case.
+    """
+    path = csv_path or (REPORTS_DIR / 'ablation_results.csv')
+    grid = {}
+    if not path.exists():
+        return grid
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            try:
+                grid[(float(row['temperature']), float(row['alpha']))] = float(row['f1_mean'])
+            except (KeyError, ValueError):
+                continue
+    return grid
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LaTeX table builders
 # ─────────────────────────────────────────────────────────────────────────────

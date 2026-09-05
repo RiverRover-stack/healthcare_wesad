@@ -203,21 +203,42 @@ def default_run_tag() -> str:
     return OUTPUT_DIR.name
 
 
+def _fold_record_key(record: Dict) -> tuple:
+    return (str(record.get('model', '')), str(record.get('mode', '')),
+            str(record.get('run_tag', '')), str(record.get('fold_idx', '')))
+
+
 def append_fold_record(row: Dict) -> None:
-    """Append one fold's results to REPORTS_DIR/per_fold_results.csv immediately."""
+    """
+    Upsert one fold's results into REPORTS_DIR/per_fold_results.csv, keyed on
+    (model, mode, run_tag, fold_idx). Written immediately after each fold so a
+    crash leaves completed folds on disk. Re-running the same fold (e.g. an
+    invocation restarted into the same WESAD_OUTPUT_DIR) replaces its row
+    instead of duplicating it -- teacher, students and every ablation config
+    all share this one file across separate script invocations, so unlike
+    ablation_results.csv it must never be wiped wholesale at process start.
+    """
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     path = REPORTS_DIR / "per_fold_results.csv"
-    write_header = not path.exists()
 
     record = {k: row.get(k, '') for k in PER_FOLD_FIELDS}
     if not record.get('timestamp'):
         record['timestamp'] = datetime.now(timezone.utc).isoformat()
+    key = _fold_record_key(record)
 
-    with open(path, 'a', newline='', encoding='utf-8') as f:
+    existing_rows = []
+    if path.exists():
+        with open(path, newline='', encoding='utf-8') as f:
+            for existing in csv.DictReader(f):
+                if _fold_record_key(existing) != key:
+                    existing_rows.append(existing)
+
+    existing_rows.append(record)
+
+    with open(path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=PER_FOLD_FIELDS)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(record)
+        writer.writeheader()
+        writer.writerows(existing_rows)
 
 
 def _get_git_sha() -> str:

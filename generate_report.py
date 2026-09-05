@@ -36,6 +36,7 @@ from evaluation.reporter import (
     generate_advanced_figures,
 )
 from evaluation.efficiency import get_efficiency_report
+from evaluation.results import read_ablation_grid
 from models.teacher import create_teacher_cnn
 from models.student import STUDENT_REGISTRY
 
@@ -181,22 +182,12 @@ def _read_dl_per_fold():
 
 def _read_ablation_results():
     """
-    Read ablation_results.csv (one row per (temperature, alpha) configuration)
-    into a grid dict plus the sorted axis values, derived entirely from the
-    CSV so the ablation figure is regenerable without re-running the sweep.
+    ablation_results.csv, as a grid dict plus the sorted axis values actually
+    present -- derived entirely from the CSV (via the shared reader in
+    evaluation.results, also used by run_ablation.py) so the ablation figure
+    is regenerable without re-running the sweep.
     """
-    path = REPORTS_DIR / 'ablation_results.csv'
-    if not path.exists():
-        return {}, [], []
-    grid = {}
-    try:
-        with open(path, encoding='utf-8') as f:
-            for row in csv.DictReader(f):
-                t = float(row['temperature'])
-                a = float(row['alpha'])
-                grid[(t, a)] = float(row['f1_mean'])
-    except Exception:
-        return {}, [], []
+    grid = read_ablation_grid()
     temperatures = sorted({t for t, _ in grid})
     alphas = sorted({a for _, a in grid})
     return grid, temperatures, alphas

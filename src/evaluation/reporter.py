@@ -238,22 +238,21 @@ def plot_summary_table(rows: List[List[str]], save: bool = True) -> plt.Figure:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_pareto_front(
-    efficiency_data: Dict[str, Dict],
-    accuracy_data:   Dict[str, Dict],
+    points: List[Dict],
     save: bool = True,
 ) -> plt.Figure:
     """
     Scatter plot showing the accuracy vs model size trade-off (Pareto front).
 
-    efficiency_data format:
-        {'ModelName': {'size_kb': float, 'params': int, 'latency_ms': float}, ...}
-    accuracy_data format:
-        {'ModelName': {'f1': {'mean': float, 'std': float}}, ...}
+    points: [{'label': str, 'size_kb': float, 'f1_mean': float, 'category': str}, ...]
+    category must be one of 'teacher', 'standalone', 'distilled', 'ml' -- passed in
+    explicitly by the caller rather than guessed from the label, so a standalone and
+    a distilled student of the same architecture (same size_kb, different F1) both
+    show up instead of one silently falling through to the wrong bucket.
     """
     _style()
     fig, ax = plt.subplots(figsize=(8, 5.5))
 
-    # Color map: blue=baselines/ML, green=teacher, orange=standalone, red=distilled
     color_map = {
         'teacher':    '#1565C0',
         'standalone': '#FF9800',
@@ -263,43 +262,31 @@ def plot_pareto_front(
     marker_map = {
         'teacher': '*', 'standalone': 'o', 'distilled': 's', 'ml': '^',
     }
+    # Distilled/standalone pairs share an x (size_kb); offset their labels
+    # in opposite directions so they don't collide.
+    label_offset = {
+        'teacher': (6, 4), 'standalone': (6, 6), 'distilled': (6, -12), 'ml': (6, 4),
+    }
 
     plotted = []
-    for name, eff in efficiency_data.items():
-        size_kb = eff.get('size_kb', None)
-        if size_kb is None or name not in accuracy_data:
-            continue
-        f1 = accuracy_data[name].get('f1', {}).get('mean', None)
-        if f1 is None:
-            continue
-
-        # Determine category for styling
-        low = name.lower()
-        if 'teacher' in low:
-            cat = 'teacher'
-        elif 'distill' in low:
-            cat = 'distilled'
-        elif 'standalone' in low:
-            cat = 'standalone'
-        else:
-            cat = 'ml'
-
+    for p in points:
+        size_kb, f1, cat, label = p['size_kb'], p['f1_mean'], p['category'], p['label']
         ax.scatter(size_kb, f1,
                    s=120, zorder=5,
                    color=color_map[cat],
                    marker=marker_map[cat],
                    edgecolors='white', linewidths=0.8)
-        ax.annotate(name, (size_kb, f1),
-                    textcoords='offset points', xytext=(6, 4),
+        ax.annotate(label, (size_kb, f1),
+                    textcoords='offset points', xytext=label_offset[cat],
                     fontsize=8.5, color=COLORS['text'])
-        plotted.append((size_kb, f1, cat))
+        plotted.append((size_kb, f1))
 
     # Draw Pareto front (non-dominated points: larger size, higher F1)
     if plotted:
         pts = sorted(plotted, key=lambda p: p[0])
         pareto = []
         best_f1 = -1.0
-        for sz, f1, _ in pts:
+        for sz, f1 in pts:
             if f1 > best_f1:
                 pareto.append((sz, f1))
                 best_f1 = f1
@@ -308,19 +295,25 @@ def plot_pareto_front(
             ax.step(px, py, where='post', linestyle='--',
                     color='#BDBDBD', linewidth=1.2, zorder=1, label='Pareto front')
 
-    # Legend patches
-    patches = [
-        mpatches.Patch(color=color_map['teacher'],    label='Teacher (Multi-Scale)'),
-        mpatches.Patch(color=color_map['standalone'], label='Student (standalone)'),
-        mpatches.Patch(color=color_map['distilled'],  label='Student (distilled)'),
-        mpatches.Patch(color=color_map['ml'],         label='Traditional ML'),
-    ]
-    ax.legend(handles=patches, fontsize=9, loc='lower right')
+    # Legend patches (only for categories actually present)
+    present = {p['category'] for p in points}
+    legend_labels = {
+        'teacher': 'Teacher (Multi-Scale)', 'standalone': 'Student (standalone)',
+        'distilled': 'Student (distilled)', 'ml': 'Traditional ML',
+    }
+    patches = [mpatches.Patch(color=color_map[c], label=legend_labels[c])
+               for c in ('teacher', 'standalone', 'distilled', 'ml') if c in present]
+    ax.legend(handles=patches, fontsize=9, loc='best')
 
     ax.set_xlabel('Model Size (KB, FP32)', fontsize=12)
     ax.set_ylabel('F1 Score (LOSO mean)', fontsize=12)
     ax.set_title('Accuracy vs Model Size — Pareto Front', fontsize=13, fontweight='bold')
-    ax.set_ylim(0, 1.08)
+
+    if plotted:
+        f1_vals = [f1 for _, f1 in plotted]
+        lo, hi = min(f1_vals), max(f1_vals)
+        pad = max(0.02, (hi - lo) * 0.2)
+        ax.set_ylim(max(0.0, lo - pad), min(1.0, hi + pad * 1.5))
     ax.axhline(y=0.9, color='#EEEEEE', linestyle='--', linewidth=0.8, zorder=0)
 
     fig.tight_layout()
@@ -460,47 +453,52 @@ def plot_loso_heatmap(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_ablation(
-    temp_results:  Dict[float, float],
-    alpha_results: Dict[float, float],
+    grid_results: Dict[Tuple[float, float], float],
+    temperatures: List[float],
+    alphas: List[float],
+    model_name: str = 'MicroCNN',
     save: bool = True,
 ) -> plt.Figure:
     """
-    Two-panel ablation plot:
-      Left:  F1 vs KD Temperature
-      Right: F1 vs KD Alpha (teacher weight)
+    Temperature x alpha F1 heatmap for the KD ablation grid.
 
-    temp_results  format: {1: 0.82, 2: 0.85, 4: 0.88, 8: 0.87}
-    alpha_results format: {0.3: 0.82, 0.5: 0.85, 0.7: 0.88, 0.9: 0.86}
+    grid_results: {(temperature, alpha): f1_mean, ...} -- need not cover every
+    cell (a one-factor sweep leaves the rest of the grid blank).
     """
     _style()
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
 
-    def _plot_sweep(ax, data, xlabel, best_marker_x, title):
-        xs = sorted(data.keys())
-        ys = [data[x] for x in xs]
-        ax.plot(xs, ys, 'o-', color='#2196F3', linewidth=2, markersize=7)
-        ax.axvline(x=best_marker_x, color='#E53935', linestyle='--',
-                   linewidth=1.2, label=f'Best ({best_marker_x})')
-        for x, y in zip(xs, ys):
-            ax.annotate(f'{y:.3f}', (x, y), textcoords='offset points',
-                        xytext=(0, 8), ha='center', fontsize=9)
-        ax.set_xlabel(xlabel, fontsize=11)
-        ax.set_ylabel('F1 Score', fontsize=11)
-        ax.set_title(title, fontsize=12, fontweight='bold')
-        ax.legend(fontsize=9)
+    grid = np.full((len(temperatures), len(alphas)), np.nan)
+    for i, t in enumerate(temperatures):
+        for j, a in enumerate(alphas):
+            if (t, a) in grid_results:
+                grid[i, j] = grid_results[(t, a)]
 
-    if temp_results:
-        best_t = max(temp_results, key=temp_results.get)
-        _plot_sweep(ax1, temp_results, 'KD Temperature (T)', best_t,
-                    'Temperature Ablation')
+    has_data = np.isfinite(grid).any()
+    vmin = np.nanmin(grid) if has_data else 0.0
+    vmax = np.nanmax(grid) if has_data else 1.0
+    mean = np.nanmean(grid) if has_data else 0.5
 
-    if alpha_results:
-        best_a = max(alpha_results, key=alpha_results.get)
-        _plot_sweep(ax2, alpha_results, 'KD Alpha (teacher weight)', best_a,
-                    'Alpha Ablation')
+    im = ax.imshow(grid, cmap='viridis', aspect='auto', vmin=vmin, vmax=vmax)
 
-    fig.suptitle('KD Hyperparameter Ablation — MicroCNN on WESAD',
-                 fontsize=13, fontweight='bold', y=1.02)
+    ax.set_xticks(range(len(alphas)))
+    ax.set_xticklabels([str(a) for a in alphas])
+    ax.set_yticks(range(len(temperatures)))
+    ax.set_yticklabels([str(t) for t in temperatures])
+    ax.set_xlabel('KD Alpha (teacher weight)', fontsize=11)
+    ax.set_ylabel('KD Temperature (T)', fontsize=11)
+    ax.set_title(f'KD Hyperparameter Ablation — {model_name} on WESAD',
+                 fontsize=12, fontweight='bold')
+
+    for i in range(len(temperatures)):
+        for j in range(len(alphas)):
+            val = grid[i, j]
+            if np.isfinite(val):
+                color = 'white' if val < mean else 'black'
+                ax.text(j, i, f'{val:.3f}', ha='center', va='center',
+                        color=color, fontsize=9)
+
+    fig.colorbar(im, ax=ax, label='F1 Score')
     fig.tight_layout()
 
     if save:
@@ -529,12 +527,13 @@ def generate_all_figures(comparison_results: Dict,
 
 def generate_advanced_figures(
     per_subject_all: Optional[Dict[str, Dict[str, Dict]]] = None,
-    efficiency_data: Optional[Dict[str, Dict]] = None,
-    accuracy_data:   Optional[Dict[str, Dict]] = None,
+    pareto_points:   Optional[List[Dict]] = None,
     standalone_res:  Optional[Dict[str, Dict]] = None,
     distilled_res:   Optional[Dict[str, Dict]] = None,
-    temp_ablation:   Optional[Dict[float, float]] = None,
-    alpha_ablation:  Optional[Dict[float, float]] = None,
+    ablation_grid:        Optional[Dict[Tuple[float, float], float]] = None,
+    ablation_temperatures: Optional[List[float]] = None,
+    ablation_alphas:       Optional[List[float]] = None,
+    ablation_model_name:   str = 'MicroCNN',
 ) -> None:
     """
     Generate advanced figures (fig4-fig7) when the relevant data is available.
@@ -544,8 +543,8 @@ def generate_advanced_figures(
     create_directories()
     print('\n  Generating advanced figures...')
 
-    if efficiency_data and accuracy_data:
-        plot_pareto_front(efficiency_data, accuracy_data)
+    if pareto_points:
+        plot_pareto_front(pareto_points)
     else:
         print('  Skipping fig4 (pareto front) — run efficiency benchmarks first')
 
@@ -559,5 +558,8 @@ def generate_advanced_figures(
     else:
         print('  Skipping fig6 (heatmap) — per-subject data needed')
 
-    if temp_ablation or alpha_ablation:
-        plot_ablation(temp_ablation or {}, alpha_ablation or {})
+    if ablation_grid:
+        plot_ablation(ablation_grid, ablation_temperatures, ablation_alphas,
+                      model_name=ablation_model_name)
+    else:
+        print('  Skipping fig7 (ablation) — run run_ablation.py first')

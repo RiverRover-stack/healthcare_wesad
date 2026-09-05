@@ -118,7 +118,7 @@ DL_CONFIG = {
 
     # Shared training
     'batch_size':       16,      # Small batches: total dataset is ~380 windows
-    'lr':               3e-4,    # AdamW learning rate
+    'lr':               3e-4,    # Adam learning rate
     'weight_decay':     1e-3,    # L2 regularisation — prevents overfitting on tiny data
 
     # Epoch counts (teacher needs more, students converge faster)

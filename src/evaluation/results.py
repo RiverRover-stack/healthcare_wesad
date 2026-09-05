@@ -67,25 +67,30 @@ def load_results(csv_path: Optional[Path] = None) -> Dict[str, Dict]:
 
     results = {}
     with open(path, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        header = next(reader, None)   # skip header row
-        for row in reader:
-            if len(row) < 6:
-                continue
-            name   = row[0].strip()
-            params = row[1].strip()
-            acc_m,  acc_s  = _parse_cell(row[2])
-            rec_m,  rec_s  = _parse_cell(row[3])
-            f1_m,   f1_s   = _parse_cell(row[4])
-            auc_m,  auc_s  = _parse_cell(row[5])
+        rows = list(csv.reader(f))
 
-            results[name] = {
-                'params':   params,
-                'accuracy': {'mean': acc_m,  'std': acc_s},
-                'recall':   {'mean': rec_m,  'std': rec_s},
-                'f1':       {'mean': f1_m,   'std': f1_s},
-                'roc_auc':  {'mean': auc_m,  'std': auc_s},
-            }
+    # Only skip a genuine header row -- don't blindly drop the first data
+    # row of a headerless CSV.
+    if rows and rows[0] and rows[0][0].strip().lower() == 'model':
+        rows = rows[1:]
+
+    for row in rows:
+        if len(row) < 6:
+            continue
+        name   = row[0].strip()
+        params = row[1].strip()
+        acc_m,  acc_s  = _parse_cell(row[2])
+        rec_m,  rec_s  = _parse_cell(row[3])
+        f1_m,   f1_s   = _parse_cell(row[4])
+        auc_m,  auc_s  = _parse_cell(row[5])
+
+        results[name] = {
+            'params':   params,
+            'accuracy': {'mean': acc_m,  'std': acc_s},
+            'recall':   {'mean': rec_m,  'std': rec_s},
+            'f1':       {'mean': f1_m,   'std': f1_s},
+            'roc_auc':  {'mean': auc_m,  'std': auc_s},
+        }
     return results
 
 

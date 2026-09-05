@@ -4,8 +4,11 @@ Generate Report: Produce All Result Figures from Existing Pipeline Results
 Usage:
     python generate_report.py
 
-Reads model_comparison.csv for all results and generates publication-ready
-PNG figures. No re-training needed — just run after each training step.
+Reads outputs/reports/*.csv (baseline_results.csv, classical_loso.csv,
+classical_per_fold.csv, model_comparison.csv, per_fold_results.csv,
+ablation_results.csv) and generates publication-ready PNG figures. Nothing
+here is hand-transcribed -- every number comes from a file a pipeline run
+actually wrote. No re-training needed -- just run after each training step.
 
 Always generated (core figures):
     fig1_model_comparison.png    — Recall / F1 / AUC bar chart
@@ -18,10 +21,11 @@ Generated when student results are available (run train_students.py first):
     fig6_loso_heatmap.png        — Subjects x Models F1 heatmap
 
 Generated when ablation results are available (run run_ablation.py first):
-    fig7_ablation.png            — Temperature and alpha sweep plots
+    fig7_ablation.png            — Temperature x alpha F1 heatmap
 """
 
 import csv
+import json
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -35,86 +39,74 @@ from evaluation.efficiency import get_efficiency_report
 from models.teacher import create_teacher_cnn
 from models.student import STUDENT_REGISTRY
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Traditional ML + baseline results (from main.py run, March 24 2026)
-# ─────────────────────────────────────────────────────────────────────────────
-
-COMPARISON_RESULTS = {
-    'Random\nBaseline': {
-        'recall': 0.358, 'f1': 0.364, 'roc_auc': 0.50,
-    },
-    'Majority\nBaseline': {
-        'recall': 0.000, 'f1': 0.000, 'roc_auc': 0.00,
-    },
-    'EDA\nThreshold': {
-        'recall': 0.866, 'f1': 0.792, 'roc_auc': 0.00,
-    },
-    'Logistic\nRegression': {
-        'recall': 0.954, 'recall_std': 0.134,
-        'f1':     0.947, 'f1_std':     0.105,
-        'roc_auc': 0.976, 'roc_auc_std': 0.062,
-    },
-    'Random\nForest': {
-        'recall': 0.965, 'recall_std': 0.081,
-        'f1':     0.956, 'f1_std':     0.086,
-        'roc_auc': 0.996, 'roc_auc_std': 0.011,
-    },
+BASELINE_DISPLAY = {
+    'random': ('Random\nBaseline', 'Random Baseline'),
+    'majority': ('Majority\nBaseline', 'Majority Baseline'),
+    'eda_threshold': ('EDA\nThreshold', 'EDA Threshold'),
+}
+CLASSICAL_DISPLAY = {
+    'LogReg': ('Logistic\nRegression', 'Logistic Regression'),
+    'RandomForest': ('Random\nForest', 'Random Forest'),
 }
 
-PER_SUBJECT = {
-    'LogReg': {
-        'S2':  {'recall': 1.000, 'f1': 0.745},
-        'S3':  {'recall': 0.474, 'f1': 0.643},
-        'S4':  {'recall': 1.000, 'f1': 1.000},
-        'S5':  {'recall': 1.000, 'f1': 1.000},
-        'S6':  {'recall': 1.000, 'f1': 1.000},
-        'S7':  {'recall': 1.000, 'f1': 1.000},
-        'S8':  {'recall': 1.000, 'f1': 0.909},
-        'S9':  {'recall': 0.842, 'f1': 0.914},
-        'S10': {'recall': 1.000, 'f1': 1.000},
-        'S11': {'recall': 1.000, 'f1': 1.000},
-        'S13': {'recall': 1.000, 'f1': 1.000},
-        'S14': {'recall': 1.000, 'f1': 1.000},
-        'S15': {'recall': 1.000, 'f1': 1.000},
-        'S16': {'recall': 1.000, 'f1': 1.000},
-        'S17': {'recall': 1.000, 'f1': 1.000},
-    },
-    'RandomForest': {
-        'S2':  {'recall': 1.000, 'f1': 0.974},
-        'S3':  {'recall': 0.789, 'f1': 0.857},
-        'S4':  {'recall': 1.000, 'f1': 1.000},
-        'S5':  {'recall': 1.000, 'f1': 1.000},
-        'S6':  {'recall': 1.000, 'f1': 1.000},
-        'S7':  {'recall': 1.000, 'f1': 0.974},
-        'S8':  {'recall': 0.950, 'f1': 0.691},
-        'S9':  {'recall': 0.737, 'f1': 0.848},
-        'S10': {'recall': 1.000, 'f1': 1.000},
-        'S11': {'recall': 1.000, 'f1': 1.000},
-        'S13': {'recall': 1.000, 'f1': 1.000},
-        'S14': {'recall': 1.000, 'f1': 1.000},
-        'S15': {'recall': 1.000, 'f1': 1.000},
-        'S16': {'recall': 1.000, 'f1': 1.000},
-        'S17': {'recall': 1.000, 'f1': 1.000},
-    },
-}
-
-# Base table rows (CNN + student rows added dynamically from CSV)
-BASE_TABLE_ROWS = [
-    ['Model',                'Params',       'Accuracy',        'Recall',            'F1',                'ROC-AUC'],
-    ['Random Baseline',      '--',           '~0.50',           '0.358',             '0.364',             '--'],
-    ['Majority Baseline',    '--',           '~0.67',           '0.000',             '0.000',             '--'],
-    ['EDA Threshold',        '--',           '~0.60',           '0.866',             '0.792',             '--'],
-    ['Logistic Regression',  '~150 feat.',   '0.964 +/- 0.072', '0.954 +/- 0.134',   '0.947 +/- 0.105',   '0.976 +/- 0.062'],
-    ['Random Forest',        '~150 feat.',   '0.966 +/- 0.077', '0.965 +/- 0.081',   '0.956 +/- 0.086',   '0.996 +/- 0.011'],
-]
-
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV reader helpers
+# CSV / JSON reader helpers -- every value traces back to a file a run wrote
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _read_baseline_results():
+    """Read baseline_results.csv (written by main.py). {} if not yet run."""
+    path = REPORTS_DIR / 'baseline_results.csv'
+    if not path.exists():
+        return {}
+    rows = {}
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            rows[row['model']] = {k: float(row[k]) for k in
+                                   ('accuracy', 'precision', 'recall', 'f1')}
+    return rows
+
+
+def _read_classical_loso():
+    """Read classical_loso.csv (LogReg/RF aggregates, written by main.py)."""
+    path = REPORTS_DIR / 'classical_loso.csv'
+    if not path.exists():
+        return {}
+    rows = {}
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            rows[row['model']] = {
+                metric: {'mean': float(row[f'{metric}_mean']), 'std': float(row[f'{metric}_std'])}
+                for metric in ('accuracy', 'precision', 'recall', 'f1', 'roc_auc')
+            }
+    return rows
+
+
+def _read_classical_per_fold():
+    """Read classical_per_fold.csv into {'LogReg': {'S2': {'recall':.., 'f1':..}}, ...}."""
+    path = REPORTS_DIR / 'classical_per_fold.csv'
+    if not path.exists():
+        return {}
+    per_subject = {}
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            per_subject.setdefault(row['model'], {})[row['test_subject']] = {
+                'recall': float(row['recall']), 'f1': float(row['f1']),
+            }
+    return per_subject
+
+
+def _read_dataset_stats():
+    """Read dataset_stats.json (written by main.py). None if not yet run."""
+    path = REPORTS_DIR / 'dataset_stats.json'
+    if not path.exists():
+        return None
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
 
 def _read_all_dl_results():
-    """Read all DL model rows from model_comparison.csv."""
+    """Read all DL (teacher/student) rows from model_comparison.csv."""
     csv_path = REPORTS_DIR / "model_comparison.csv"
     if not csv_path.exists():
         return {}
@@ -130,7 +122,7 @@ def _read_all_dl_results():
         if len(row) < 6:
             continue
         name = row[0].strip()
-        # Skip the baseline/ML rows we already have hardcoded
+        # Skip the baseline/ML rows -- those come from the dedicated CSVs above.
         if any(x in name for x in ('Baseline', 'EDA Threshold', 'Logistic', 'Random Forest')):
             continue
 
@@ -166,10 +158,86 @@ def _read_all_dl_results():
     return dl_rows
 
 
-def _build_comparison_and_table(dl_results):
-    """Merge DL results into COMPARISON_RESULTS dict and table rows."""
-    results = dict(COMPARISON_RESULTS)
-    table   = [row[:] for row in BASE_TABLE_ROWS]
+def _read_dl_per_fold():
+    """Read per_fold_results.csv into {'MicroCNN (distilled)': {'S2': {'f1':.., 'recall':..}}, ...}."""
+    path = REPORTS_DIR / 'per_fold_results.csv'
+    if not path.exists():
+        return {}
+    per_subject = {}
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            if row['mode'] == 'teacher':
+                label = 'Teacher'
+            else:
+                label = f"{row['model']} ({row['mode']})"
+            try:
+                per_subject.setdefault(label, {})[row['test_subject']] = {
+                    'recall': float(row['test_recall']), 'f1': float(row['test_f1']),
+                }
+            except (KeyError, ValueError):
+                continue
+    return per_subject
+
+
+def _read_ablation_results():
+    """
+    Read ablation_results.csv (one row per (temperature, alpha) configuration)
+    into a grid dict plus the sorted axis values, derived entirely from the
+    CSV so the ablation figure is regenerable without re-running the sweep.
+    """
+    path = REPORTS_DIR / 'ablation_results.csv'
+    if not path.exists():
+        return {}, [], []
+    grid = {}
+    try:
+        with open(path, encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                t = float(row['temperature'])
+                a = float(row['alpha'])
+                grid[(t, a)] = float(row['f1_mean'])
+    except Exception:
+        return {}, [], []
+    temperatures = sorted({t for t, _ in grid})
+    alphas = sorted({a for _, a in grid})
+    return grid, temperatures, alphas
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data assembly for figures / tables
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_comparison_and_table(baseline_rows, classical_agg, dl_results, n_features):
+    """Build the fig1 bar-chart dict and the fig3 table rows from real, computed data."""
+    results = {}
+    table = [['Model', 'Params', 'Accuracy', 'Recall', 'F1', 'ROC-AUC']]
+    feat_str = f'{n_features} feat.' if n_features else '--'
+
+    for key, (chart_name, table_name) in BASELINE_DISPLAY.items():
+        if key not in baseline_rows:
+            continue
+        m = baseline_rows[key]
+        results[chart_name] = {'recall': m['recall'], 'f1': m['f1'], 'roc_auc': 0.0}
+        # EDA threshold's accuracy doesn't summarise a per-subject adaptive
+        # threshold meaningfully -- report '--' rather than a misleading number.
+        acc_str = '--' if key == 'eda_threshold' else f"{m['accuracy']:.3f}"
+        table.append([table_name, '--', acc_str, f"{m['recall']:.3f}", f"{m['f1']:.3f}", '--'])
+
+    for name, (chart_name, table_name) in CLASSICAL_DISPLAY.items():
+        if name not in classical_agg:
+            continue
+        agg = classical_agg[name]
+        results[chart_name] = {
+            'recall': agg['recall']['mean'], 'recall_std': agg['recall']['std'],
+            'f1': agg['f1']['mean'], 'f1_std': agg['f1']['std'],
+            'roc_auc': agg['roc_auc']['mean'], 'roc_auc_std': agg['roc_auc']['std'],
+        }
+        table.append([
+            table_name, feat_str,
+            f"{agg['accuracy']['mean']:.3f} +/- {agg['accuracy']['std']:.3f}",
+            f"{agg['recall']['mean']:.3f} +/- {agg['recall']['std']:.3f}",
+            f"{agg['f1']['mean']:.3f} +/- {agg['f1']['std']:.3f}",
+            f"{agg['roc_auc']['mean']:.3f} +/- {agg['roc_auc']['std']:.3f}",
+        ])
 
     teacher_param_count = create_teacher_cnn().count_parameters()
 
@@ -178,7 +246,6 @@ def _build_comparison_and_table(dl_results):
             if r['recall']['mean'] == 0.0 and r['f1']['mean'] == 0.0:
                 continue  # skip collapsed training runs
 
-            # Display name for chart (shorter)
             display = name.replace(' (', '\n(')
             results[display] = {
                 'recall':      r['recall']['mean'],
@@ -189,9 +256,8 @@ def _build_comparison_and_table(dl_results):
                 'roc_auc_std': r['roc_auc']['std'],
             }
 
-            # Update param count for teacher dynamically
             params = r['params']
-            if '1D-CNN Teacher' in name:
+            if '1D-CNN Teacher' in name or name == 'Teacher':
                 params = f"~{teacher_param_count // 1000}K"
 
             table.append([
@@ -211,83 +277,57 @@ def _build_comparison_and_table(dl_results):
     return results, table
 
 
-def _build_advanced_data(dl_results):
-    """Build data structures needed for advanced figures (fig4-fig6)."""
-    # ── Per-subject data for heatmap ──────────────────────────────────────────
-    # Start with the hardcoded ML per-subject data
-    per_subject_all = dict(PER_SUBJECT)
-
-    # ── Efficiency benchmarks (quick, CPU-only) ───────────────────────────────
-    efficiency_data = {}
-    models_to_bench = {'Teacher (Multi-Scale)': create_teacher_cnn()}
-    for name, cls in STUDENT_REGISTRY.items():
-        models_to_bench[name] = cls()
-
+def _build_pareto_points(dl_results, classical_agg):
+    """
+    Explicit (label, size_kb, f1_mean, category) points for fig4 -- no
+    substring guessing on model names, so standalone and distilled students
+    of the same architecture (same size_kb, different F1) both show up.
+    """
     print("  Running efficiency benchmarks (CPU)...")
-    for mname, model in models_to_bench.items():
-        efficiency_data[mname] = get_efficiency_report(model, input_shape=(6, 3840))
+    efficiency = {'Teacher (Multi-Scale)': get_efficiency_report(create_teacher_cnn(), input_shape=(6, 3840))}
+    for name, cls in STUDENT_REGISTRY.items():
+        efficiency[name] = get_efficiency_report(cls(), input_shape=(6, 3840))
 
-    # ── Accuracy data for pareto ──────────────────────────────────────────────
-    # Map efficiency model names to CSV result names
-    accuracy_data = {}
-    for csv_name, r in dl_results.items():
-        if 'Teacher' in csv_name:
-            accuracy_data['Teacher (Multi-Scale)'] = r
-        elif 'MicroCNN (standalone)' in csv_name:
-            accuracy_data['MicroCNN'] = r    # default accuracy = standalone
-        elif 'MicroCNN (distilled)' in csv_name:
-            accuracy_data['MicroCNN (distilled)'] = r
-        elif 'TinyCNN (standalone)' in csv_name:
-            accuracy_data['TinyCNN'] = r
-        elif 'TinyCNN (distilled)' in csv_name:
-            accuracy_data['TinyCNN (distilled)'] = r
-        elif 'MiniCNN-LSTM (standalone)' in csv_name:
-            accuracy_data['MiniCNN-LSTM'] = r
-        elif 'MiniCNN-LSTM (distilled)' in csv_name:
-            accuracy_data['MiniCNN-LSTM (distilled)'] = r
+    points = []
 
-    # Add ML models to pareto (they have no size_kb, estimate from param count)
-    ml_approximate_sizes = {'LogReg': 0.5, 'RandomForest': 45.0}
-    for mname, approx_kb in ml_approximate_sizes.items():
-        efficiency_data[mname] = {
-            'params': 0, 'size_kb': approx_kb,
-            'latency_ms': 0.0, 'flops': None,
-        }
-    accuracy_data['LogReg']      = {'f1': {'mean': 0.947, 'std': 0.105}}
-    accuracy_data['RandomForest'] = {'f1': {'mean': 0.956, 'std': 0.086}}
+    teacher_key = next((k for k in dl_results if 'Teacher' in k), None)
+    if teacher_key and efficiency['Teacher (Multi-Scale)'].get('size_kb') is not None:
+        points.append({
+            'label': 'Teacher (Multi-Scale)',
+            'size_kb': efficiency['Teacher (Multi-Scale)']['size_kb'],
+            'f1_mean': dl_results[teacher_key]['f1']['mean'],
+            'category': 'teacher',
+        })
 
-    # ── KD improvement data ───────────────────────────────────────────────────
-    standalone_res = {}
-    distilled_res  = {}
-    for csv_name, r in dl_results.items():
-        if '(standalone)' in csv_name:
-            base = csv_name.replace(' (standalone)', '')
-            standalone_res[base] = r
-        elif '(distilled)' in csv_name:
-            base = csv_name.replace(' (distilled)', '')
-            distilled_res[base] = r
+    for model_name in STUDENT_REGISTRY:
+        size_kb = efficiency.get(model_name, {}).get('size_kb')
+        if size_kb is None:
+            continue
+        for mode in ('standalone', 'distilled'):
+            key = f'{model_name} ({mode})'
+            if key not in dl_results:
+                continue
+            points.append({
+                'label': key,
+                'size_kb': size_kb,
+                'f1_mean': dl_results[key]['f1']['mean'],
+                'category': mode,
+            })
 
-    return per_subject_all, efficiency_data, accuracy_data, standalone_res, distilled_res
+    # Traditional ML: no serialized model size to measure here, so these are
+    # rough estimates (LogReg coefficients / RF tree ensemble), clearly not
+    # measured the way DL model sizes are.
+    ml_approx_size_kb = {'LogReg': 0.5, 'RandomForest': 45.0}
+    for name, size_kb in ml_approx_size_kb.items():
+        if name in classical_agg:
+            points.append({
+                'label': name,
+                'size_kb': size_kb,
+                'f1_mean': classical_agg[name]['f1']['mean'],
+                'category': 'ml',
+            })
 
-
-def _read_ablation_results():
-    """Read ablation_results.csv if it exists."""
-    path = REPORTS_DIR / 'ablation_results.csv'
-    if not path.exists():
-        return {}, {}
-    temp_res, alpha_res = {}, {}
-    try:
-        with open(path, encoding='utf-8') as f:
-            for row in csv.DictReader(f):
-                val = float(row['value'])
-                f1  = float(row['f1'])
-                if row['sweep'] == 'temperature':
-                    temp_res[val] = f1
-                else:
-                    alpha_res[val] = f1
-    except Exception:
-        pass
-    return temp_res, alpha_res
+    return points, efficiency
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -297,7 +337,12 @@ def _read_ablation_results():
 if __name__ == '__main__':
     create_directories()
 
+    baseline_rows = _read_baseline_results()
+    classical_agg = _read_classical_loso()
+    classical_per_fold = _read_classical_per_fold()
+    dataset_stats = _read_dataset_stats()
     dl_results = _read_all_dl_results()
+
     teacher_done   = any('Teacher' in k for k in dl_results)
     students_done  = any('standalone' in k or 'distilled' in k for k in dl_results)
 
@@ -305,26 +350,44 @@ if __name__ == '__main__':
         print(f"  Found {len(dl_results)} DL model result(s) in model_comparison.csv")
     else:
         print("  No DL results yet (run train_teacher.py)")
+    if not baseline_rows or not classical_agg:
+        print("  No classical/baseline results yet (run main.py)")
 
     # ── Core figures (always generated) ──────────────────────────────────────
-    comparison_results, table_rows = _build_comparison_and_table(dl_results)
-    generate_all_figures(comparison_results, PER_SUBJECT, table_rows)
+    n_features = dataset_stats['n_features'] if dataset_stats else None
+    comparison_results, table_rows = _build_comparison_and_table(
+        baseline_rows, classical_agg, dl_results, n_features)
+
+    per_subject_core = dict(classical_per_fold)  # {'LogReg': {...}, 'RandomForest': {...}}
+    generate_all_figures(comparison_results, per_subject_core, table_rows)
 
     # ── Advanced figures (only when student results exist) ────────────────────
     if students_done:
         print("\n  Student results found — generating advanced figures...")
-        per_subject_all, eff_data, acc_data, sa_res, kd_res = \
-            _build_advanced_data(dl_results)
-        temp_res, alpha_res = _read_ablation_results()
+
+        pareto_points, _ = _build_pareto_points(dl_results, classical_agg)
+
+        standalone_res = {}
+        distilled_res  = {}
+        for csv_name, r in dl_results.items():
+            if '(standalone)' in csv_name:
+                standalone_res[csv_name.replace(' (standalone)', '')] = r
+            elif '(distilled)' in csv_name:
+                distilled_res[csv_name.replace(' (distilled)', '')] = r
+
+        per_subject_all = dict(classical_per_fold)
+        per_subject_all.update(_read_dl_per_fold())
+
+        ablation_grid, ablation_temps, ablation_alphas = _read_ablation_results()
 
         generate_advanced_figures(
             per_subject_all=per_subject_all,
-            efficiency_data=eff_data,
-            accuracy_data=acc_data,
-            standalone_res=sa_res  or None,
-            distilled_res=kd_res   or None,
-            temp_ablation=temp_res  or None,
-            alpha_ablation=alpha_res or None,
+            pareto_points=pareto_points or None,
+            standalone_res=standalone_res or None,
+            distilled_res=distilled_res   or None,
+            ablation_grid=ablation_grid or None,
+            ablation_temperatures=ablation_temps,
+            ablation_alphas=ablation_alphas,
         )
     else:
         print("\n  Run train_students.py to unlock advanced figures (fig4-fig7)")

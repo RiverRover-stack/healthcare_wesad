@@ -72,7 +72,9 @@ class WESADDataset(Dataset):
                 # Replace NaN/Inf before resampling — FFT resampler spreads NaN everywhere
                 window = np.nan_to_num(window, nan=0.0, posinf=5.0, neginf=-5.0)
 
-                # Downsample each channel from 700 Hz -> 64 Hz
+                # Downsample each channel from 700 Hz -> 64 Hz.
+                # scipy.signal.resample is Fourier-method (FFT) resampling,
+                # not polyphase -- see paper corrections.
                 resampled = resample(window, TARGET_LENGTH, axis=1)
 
                 # Final sanitise after resampling (Gibbs ringing can produce large values)

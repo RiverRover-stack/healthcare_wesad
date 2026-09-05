@@ -107,10 +107,22 @@ def _weight_signature(model_name: str, run_tag: str, test_subjects: list) -> tup
     return tuple(hashes)
 
 
-def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None:
-    """Write one configuration's aggregated results to the CSV immediately."""
+def _reset_ablation_csv() -> None:
+    """
+    Start every ablation run with a fresh CSV. WESAD_OUTPUT_DIR is already
+    uniquely timestamped per run, so there is no reason to accumulate rows
+    across separate invocations -- appending across runs let a restart or
+    partial re-run leave duplicate/stale rows that disagree with
+    per_fold_results.csv about which configurations were actually run.
+    """
     path = REPORTS_DIR / 'ablation_results.csv'
-    write_header = not path.exists()
+    with open(path, 'w', newline='', encoding='utf-8') as f:
+        csv.writer(f).writerow(ABLATION_CSV_FIELDS)
+
+
+def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None:
+    """Append one configuration's aggregated results to the (already-reset) CSV."""
+    path = REPORTS_DIR / 'ablation_results.csv'
     row = {
         'temperature': temperature,
         'alpha': alpha,
@@ -121,10 +133,19 @@ def append_ablation_row(temperature: float, alpha: float, metrics: dict) -> None
         'auc_mean': metrics['roc_auc']['mean'],
     }
     with open(path, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=ABLATION_CSV_FIELDS)
-        if write_header:
-            writer.writeheader()
-        writer.writerow(row)
+        csv.DictWriter(f, fieldnames=ABLATION_CSV_FIELDS).writerow(row)
+
+
+def _read_ablation_csv() -> dict:
+    """Read ablation_results.csv back into {(temperature, alpha): f1_mean}."""
+    path = REPORTS_DIR / 'ablation_results.csv'
+    grid = {}
+    if not path.exists():
+        return grid
+    with open(path, encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            grid[(float(row['temperature']), float(row['alpha']))] = float(row['f1_mean'])
+    return grid
 
 
 def main():
@@ -159,6 +180,8 @@ def main():
 
     all_subjects = sorted(windowed.keys())
     folds_to_run = all_subjects[:max_folds] if max_folds else all_subjects
+
+    _reset_ablation_csv()
 
     # ── Sweep ──────────────────────────────────────────────────────────────────
     grid_results = {}      # {(temperature, alpha): f1_mean}
@@ -197,8 +220,12 @@ def main():
         print("  (metric saturation on this many folds/windows) -- not a bug.")
 
     print_section_header("GENERATING ABLATION PLOT")
+    # Read back from disk rather than plotting grid_results directly -- the
+    # figure must reflect exactly what's in the CSV, or the two can drift
+    # apart (the original failure mode: figures and CSVs from different runs).
+    csv_grid = _read_ablation_csv()
     plot_ablation(
-        grid_results,
+        csv_grid,
         temperatures=DL_CONFIG['ablation_temperatures'],
         alphas=DL_CONFIG['ablation_alphas'],
         model_name=model_name,

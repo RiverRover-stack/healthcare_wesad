@@ -1,0 +1,14 @@
+{
+  "id": "euphora/wesad-students-script",
+  "title": "WESAD Students (script)",
+  "code_file": "run_students_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["orvile/wesad-wearable-stress-affect-detection-dataset"],
+  "kernel_sources": ["euphora/wesad-teacher-script"],
+  "competition_sources": [],
+  "model_sources": []
+}

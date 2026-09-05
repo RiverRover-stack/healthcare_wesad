@@ -1,0 +1,14 @@
+{
+  "id": "euphora/wesad-teacher-script",
+  "title": "WESAD Teacher (script)",
+  "code_file": "run_teacher_kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["orvile/wesad-wearable-stress-affect-detection-dataset"],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": []
+}
